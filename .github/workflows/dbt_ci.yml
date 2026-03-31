@@ -1,0 +1,86 @@
+name: dbt CI
+
+on:
+  pull_request:
+    paths:
+      - 'dbt_project/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'dbt_project/**'
+
+env:
+  DBT_PROFILES_DIR: ./dbt_project
+
+jobs:
+  dbt-build:
+    name: dbt build & test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: dbt_user
+          POSTGRES_PASSWORD: dbt_password
+          POSTGRES_DB: barclays_migration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: |
+          pip install --upgrade pip
+          pip install dbt-postgres dbt-core
+
+      - name: Create profiles.yml for CI
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << 'EOF'
+          barclays_migration:
+            target: postgres_local
+            outputs:
+              postgres_local:
+                type: postgres
+                host: localhost
+                port: 5432
+                user: dbt_user
+                password: dbt_password
+                dbname: barclays_migration
+                schema: public
+                threads: 4
+          EOF
+
+      - name: Install dbt packages
+        working-directory: ./dbt_project
+        run: dbt deps
+
+      - name: Load seed data
+        working-directory: ./dbt_project
+        run: dbt seed
+
+      - name: Run dbt models
+        working-directory: ./dbt_project
+        run: dbt run
+
+      - name: Run dbt tests
+        working-directory: ./dbt_project
+        run: dbt test
+
+      - name: Generate documentation
+        working-directory: ./dbt_project
+        run: dbt docs generate

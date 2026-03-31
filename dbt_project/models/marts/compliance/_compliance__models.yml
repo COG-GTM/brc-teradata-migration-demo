@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: fct_aml_alerts
+    description: >
+      AML/sanctions screening alerts.
+      Migrated from: teradata/stored_procedures/sp_aml_screening.sql
+      and teradata/ddl/05_mart_tables.sql (MART_AML_ALERTS).
+    columns:
+      - name: alert_id
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+      - name: alert_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['SANCTIONS_MATCH', 'STRUCTURING', 'VELOCITY_BREACH', 'HIGH_RISK_COUNTRY']
+      - name: alert_severity
+        tests:
+          - accepted_values:
+              values: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+
+  - name: fct_kyc_status
+    description: >
+      Customer KYC compliance status tracker.
+      Tracks verification status and expiry for regulatory reporting.
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+      - name: kyc_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['VERIFIED', 'PENDING', 'EXPIRED', 'FAILED']

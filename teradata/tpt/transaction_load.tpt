@@ -1,0 +1,103 @@
+/*******************************************************************************
+ * transaction_load.tpt
+ *
+ * Teradata Parallel Transporter job to load daily transaction data
+ * from a delimited file into the RAW transaction table.
+ *
+ * Pattern based on COG-GTM/Teradata-Utilities-Script mloadtpt.txt
+ ******************************************************************************/
+
+DEFINE JOB LOAD_DAILY_TRANSACTIONS
+DESCRIPTION 'Load daily transaction data from delimited file into BARCLAYS_RAW.TRANSACTION'
+(
+    DEFINE SCHEMA Transaction_Schema
+    (
+        transaction_id      VARCHAR(20),
+        account_id          VARCHAR(10),
+        transaction_date    VARCHAR(10),
+        transaction_time    VARCHAR(15),
+        amount              VARCHAR(20),
+        currency            VARCHAR(3),
+        transaction_type    VARCHAR(20),
+        counterparty_id     VARCHAR(10),
+        description         VARCHAR(500),
+        channel             VARCHAR(20),
+        reference_number    VARCHAR(50)
+    );
+
+    DEFINE OPERATOR FILE_READER
+    TYPE DATACONNECTOR PRODUCER
+    SCHEMA Transaction_Schema
+    ATTRIBUTES
+    (
+        VARCHAR FILENAME        = @FileName,
+        VARCHAR FORMAT          = 'DELIMITED',
+        VARCHAR TEXTDELIMITER   = '|',
+        VARCHAR OPERMODE        = 'READ',
+        VARCHAR INDICATORMODE   = 'N',
+        VARCHAR OPENMODE        = 'Read',
+        VARCHAR SKIPROWS        = '1'
+    );
+
+    DEFINE OPERATOR LOAD_TRANSACTIONS
+    TYPE LOAD
+    SCHEMA Transaction_Schema
+    ATTRIBUTES
+    (
+        VARCHAR USERNAME        = @UserName,
+        VARCHAR USERPASSWORD    = @UserPassword,
+        VARCHAR TdpId           = @TdpId,
+        INTEGER MAXSESSIONS     = 4,
+        VARCHAR WORKINGDATABASE = 'BARCLAYS_RAW',
+        VARCHAR LOGTABLE        = 'BARCLAYS_RAW.TXN_TPT_LOG',
+        VARCHAR TARGETTABLE     = 'BARCLAYS_RAW.TRANSACTION',
+        VARCHAR ERRORTABLE1     = 'BARCLAYS_RAW.TXN_TPT_ET',
+        VARCHAR ERRORTABLE2     = 'BARCLAYS_RAW.TXN_TPT_UV'
+    );
+
+    APPLY
+    (
+        'INSERT INTO BARCLAYS_RAW.TRANSACTION
+        (
+            TRANSACTION_ID,
+            ACCOUNT_ID,
+            TRANSACTION_DATE,
+            TRANSACTION_TIME,
+            AMOUNT,
+            CURRENCY,
+            TRANSACTION_TYPE,
+            COUNTERPARTY_ID,
+            DESCRIPTION,
+            CHANNEL,
+            REFERENCE_NUMBER
+        )
+        VALUES
+        (
+            CAST(:TRANSACTION_ID AS BIGINT),
+            CAST(:ACCOUNT_ID AS INTEGER),
+            CAST(:TRANSACTION_DATE AS DATE FORMAT ''YYYY-MM-DD''),
+            CAST(:TRANSACTION_TIME AS TIME(6)),
+            CAST(:AMOUNT AS DECIMAL(18,2)),
+            :CURRENCY,
+            :TRANSACTION_TYPE,
+            CAST(:COUNTERPARTY_ID AS INTEGER),
+            :DESCRIPTION,
+            :CHANNEL,
+            :REFERENCE_NUMBER
+        );'
+    )
+    TO OPERATOR (LOAD_TRANSACTIONS[1])
+    SELECT
+        TRANSACTION_ID,
+        ACCOUNT_ID,
+        TRANSACTION_DATE,
+        TRANSACTION_TIME,
+        AMOUNT,
+        CURRENCY,
+        TRANSACTION_TYPE,
+        COUNTERPARTY_ID,
+        DESCRIPTION,
+        CHANNEL,
+        REFERENCE_NUMBER
+    FROM OPERATOR (FILE_READER[2]);
+);

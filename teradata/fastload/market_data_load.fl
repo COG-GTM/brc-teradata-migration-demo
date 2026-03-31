@@ -1,0 +1,62 @@
+/*******************************************************************************
+ * market_data_load.fl
+ *
+ * FastLoad script to bulk-load daily market data (rates, prices) from
+ * a delimited flat file into the BARCLAYS_RAW.MARKET_DATA table.
+ *
+ * Pattern based on COG-GTM/Teradata-Utilities-Script Customer_fastload.fl.txt
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+DATABASE BARCLAYS_RAW;
+
+/* Drop error tables from any previous failed run */
+DROP TABLE BARCLAYS_RAW.MKTDATA_FL_ET;
+DROP TABLE BARCLAYS_RAW.MKTDATA_FL_UV;
+
+BEGIN LOADING BARCLAYS_RAW.MARKET_DATA
+ERRORFILES BARCLAYS_RAW.MKTDATA_FL_ET, BARCLAYS_RAW.MKTDATA_FL_UV
+CHECKPOINT 5000;
+
+SET RECORD VARTEXT '|';
+
+DEFINE
+in_instrument_id    (VARCHAR(20)),
+in_valuation_date   (VARCHAR(10)),
+in_instrument_type  (VARCHAR(30)),
+in_instrument_name  (VARCHAR(100)),
+in_currency         (VARCHAR(3)),
+in_mid_price        (VARCHAR(20)),
+in_bid_price        (VARCHAR(20)),
+in_ask_price        (VARCHAR(20)),
+in_source_system    (VARCHAR(50))
+FILE=${INPUT_DIR}/market_data_${YYYYMMDD}.dat;
+
+INSERT INTO BARCLAYS_RAW.MARKET_DATA
+(
+    instrument_id,
+    valuation_date,
+    instrument_type,
+    instrument_name,
+    currency,
+    mid_price,
+    bid_price,
+    ask_price,
+    source_system
+)
+VALUES
+(
+    :in_instrument_id,
+    CAST(:in_valuation_date AS DATE FORMAT 'YYYY-MM-DD'),
+    :in_instrument_type,
+    :in_instrument_name,
+    :in_currency,
+    CAST(:in_mid_price AS DECIMAL(18,8)),
+    CAST(:in_bid_price AS DECIMAL(18,8)),
+    CAST(:in_ask_price AS DECIMAL(18,8)),
+    :in_source_system
+);
+
+END LOADING;
+LOGOFF;

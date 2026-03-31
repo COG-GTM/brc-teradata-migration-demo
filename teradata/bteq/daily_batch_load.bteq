@@ -1,0 +1,87 @@
+/*******************************************************************************
+ * daily_batch_load.bteq
+ *
+ * Daily batch ETL orchestration script.
+ * Calls stored procedures in sequence with error handling.
+ *
+ * Pattern based on COG-GTM/Teradata-Utilities-Script
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+DATABASE BARCLAYS_DWH;
+
+.SET WIDTH 200
+.SET ERRORLEVEL 3807 SEVERITY 0  /* table does not exist - treat as warning */
+.SET ERRORLEVEL 3803 SEVERITY 0  /* table already exists - treat as warning */
+
+/*---------------------------------------------------------------------------
+ * Pre-flight checks
+ *---------------------------------------------------------------------------*/
+SELECT 'Daily ETL started at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+/* Verify source data is available for today */
+SELECT COUNT(*) AS raw_txn_count
+FROM BARCLAYS_RAW.TRANSACTION
+WHERE transaction_date = CURRENT_DATE;
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+.IF ACTIVITYCOUNT = 0 THEN .GOTO NODATA
+
+/*---------------------------------------------------------------------------
+ * STEP 1: Daily transaction load (includes SCD2 for customers)
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 1: sp_daily_transaction_load started';
+CALL BARCLAYS_DWH.sp_daily_transaction_load(CURRENT_DATE);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 1 complete. Rows affected: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/*---------------------------------------------------------------------------
+ * STEP 2: Customer risk scoring
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 2: sp_customer_risk_scoring started';
+CALL BARCLAYS_DWH.sp_customer_risk_scoring(CURRENT_DATE);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 2 complete. Rows affected: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/*---------------------------------------------------------------------------
+ * STEP 3: AML screening
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 3: sp_aml_screening started';
+CALL BARCLAYS_DWH.sp_aml_screening(CURRENT_DATE);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 3 complete. Rows affected: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/*---------------------------------------------------------------------------
+ * Post-load validation
+ *---------------------------------------------------------------------------*/
+SELECT 'Validation: checking transaction counts';
+SELECT
+    'DWH transactions for today: ' || CAST(COUNT(*) AS VARCHAR(20))
+FROM BARCLAYS_DWH.FCT_TRANSACTION
+WHERE date_key = CAST(CAST(CURRENT_DATE AS FORMAT 'YYYYMMDD') AS INTEGER);
+
+SELECT
+    'AML alerts for today: ' || CAST(COUNT(*) AS VARCHAR(20))
+FROM BARCLAYS_MART.MART_AML_ALERTS
+WHERE alert_date = CURRENT_DATE;
+
+SELECT 'Daily ETL completed successfully at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.GOTO FINISH
+
+/*---------------------------------------------------------------------------
+ * Error / no-data handlers
+ *---------------------------------------------------------------------------*/
+.LABEL NODATA
+SELECT 'WARNING: No source data found for ' || CAST(CURRENT_DATE AS VARCHAR(10));
+SELECT 'Daily ETL skipped - no data available';
+.GOTO FINISH
+
+.LABEL ERRORHANDLER
+SELECT 'ERROR: Daily ETL failed at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+SELECT 'Last ERRORCODE: ' || CAST(ERRORCODE AS VARCHAR(10));
+.QUIT 12
+
+.LABEL FINISH
+.LOGOFF;
+.QUIT 0;

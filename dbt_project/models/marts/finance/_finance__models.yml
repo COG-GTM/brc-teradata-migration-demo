@@ -1,0 +1,50 @@
+version: 2
+
+models:
+  - name: fct_daily_transactions
+    description: >
+      Daily transaction fact table for finance reporting.
+      Migrated from: teradata/ddl/04_warehouse_tables.sql (FCT_TRANSACTION).
+    columns:
+      - name: transaction_id
+        description: Unique transaction identifier
+        tests:
+          - unique
+          - not_null
+      - name: account_id
+        tests:
+          - not_null
+      - name: transaction_date
+        tests:
+          - not_null
+      - name: amount
+        tests:
+          - not_null
+
+  - name: fct_monthly_pnl
+    description: >
+      Monthly profit and loss aggregation by business line and product type.
+      Migrated from: teradata/stored_procedures/sp_monthly_pnl_rollup.sql.
+      Replaces Teradata GROUP BY ROLLUP and CSUM/MAVG OLAP functions.
+    columns:
+      - name: pnl_id
+        tests:
+          - unique
+          - not_null
+      - name: reporting_month
+        tests:
+          - not_null
+
+  - name: dim_accounts
+    description: >
+      Account dimension with current state.
+      Migrated from: teradata/ddl/04_warehouse_tables.sql (DIM_ACCOUNT).
+    columns:
+      - name: account_id
+        description: Unique account identifier
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null

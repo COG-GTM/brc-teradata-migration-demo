@@ -1,0 +1,50 @@
+# =============================================================================
+# dbt Profile Configuration (Example)
+# Copy this file to ~/.dbt/profiles.yml and fill in your credentials.
+# =============================================================================
+
+barclays_migration:
+  target: snowflake  # Default target; switch to 'databricks' or 'postgres_local'
+
+  outputs:
+
+    # -------------------------------------------------------------------------
+    # Snowflake Target
+    # -------------------------------------------------------------------------
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'TRANSFORMER') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'BARCLAYS_MIGRATION') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'TRANSFORMING') }}"
+      schema: public
+      threads: 4
+      client_session_keep_alive: false
+      query_tag: 'dbt_barclays_migration'
+
+    # -------------------------------------------------------------------------
+    # Databricks Target
+    # -------------------------------------------------------------------------
+    databricks:
+      type: databricks
+      host: "{{ env_var('DATABRICKS_HOST') }}"
+      http_path: "{{ env_var('DATABRICKS_HTTP_PATH') }}"
+      token: "{{ env_var('DATABRICKS_TOKEN') }}"
+      catalog: "{{ env_var('DATABRICKS_CATALOG', 'barclays_migration') }}"
+      schema: public
+      threads: 4
+
+    # -------------------------------------------------------------------------
+    # Local Postgres (for development via docker-compose)
+    # -------------------------------------------------------------------------
+    postgres_local:
+      type: postgres
+      host: localhost
+      port: 5432
+      user: dbt_user
+      password: dbt_password
+      dbname: barclays_migration
+      schema: public
+      threads: 4

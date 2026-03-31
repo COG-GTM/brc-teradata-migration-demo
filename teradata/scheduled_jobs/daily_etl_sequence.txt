@@ -1,0 +1,43 @@
+################################################################################
+# Daily ETL Sequence - Barclays Teradata Data Warehouse
+#
+# Scheduled via UC4/AutoSys/Control-M at 06:00 GMT daily (business days only)
+# Dependencies: upstream source system extracts must complete by 05:30 GMT
+################################################################################
+
+# Job Name                          | Dependency              | Schedule      | Description
+# ----------------------------------|-------------------------|---------------|----------------------------------
+# BRCL_DAILY_001_PREFLIGHT          | SOURCE_EXTRACT_COMPLETE | 06:00 GMT     | Pre-flight checks & file validation
+# BRCL_DAILY_002_FASTLOAD_MKTDATA   | BRCL_DAILY_001          | 06:05 GMT     | FastLoad market data (market_data_load.fl)
+# BRCL_DAILY_003_TPT_TRANSACTIONS   | BRCL_DAILY_001          | 06:05 GMT     | TPT load transactions (transaction_load.tpt)
+# BRCL_DAILY_004_MLOAD_BALANCES     | BRCL_DAILY_003          | 06:30 GMT     | MultiLoad balance upsert (account_balance_upsert.ml)
+# BRCL_DAILY_005_BTEQ_MAIN          | BRCL_DAILY_003,004      | 07:00 GMT     | Main BTEQ batch (daily_batch_load.bteq)
+#   -> sp_daily_transaction_load    |                         |               |   SCD2 + fact load
+#   -> sp_customer_risk_scoring     |                         |               |   Risk score recalculation
+#   -> sp_aml_screening             |                         |               |   AML/sanctions screening
+# BRCL_DAILY_006_EXPORT_CUSTOMERS   | BRCL_DAILY_005          | 08:00 GMT     | Customer export (customer_export.bteq)
+# BRCL_DAILY_007_STATS_COLLECTION   | BRCL_DAILY_005          | 08:00 GMT     | Collect statistics on modified tables
+# BRCL_DAILY_008_VALIDATION         | BRCL_DAILY_005,006,007  | 08:30 GMT     | Row count and checksum validation
+# BRCL_DAILY_009_NOTIFICATION       | BRCL_DAILY_008          | 09:00 GMT     | Email notification to ops team
+
+################################################################################
+# Execution Graph (parallel where possible):
+#
+#   PREFLIGHT
+#      |
+#      +---> FASTLOAD_MKTDATA ---+
+#      |                         |
+#      +---> TPT_TRANSACTIONS ---+---> MLOAD_BALANCES ---+
+#                                                         |
+#                                    BTEQ_MAIN <---------+
+#                                       |
+#                      +----------------+----------------+
+#                      |                |                |
+#               EXPORT_CUSTOMERS  STATS_COLLECTION       |
+#                      |                |                |
+#                      +-------+--------+                |
+#                              |                         |
+#                         VALIDATION <-------------------+
+#                              |
+#                        NOTIFICATION
+################################################################################

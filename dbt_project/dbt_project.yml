@@ -1,0 +1,52 @@
+name: 'barclays_migration'
+version: '1.0.0'
+config-version: 2
+profile: 'barclays_migration'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+analysis-paths: ["analyses"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  barclays_migration:
+    staging:
+      +materialized: view
+      +schema: staging
+      +tags: ['staging']
+    intermediate:
+      +materialized: ephemeral
+      +tags: ['intermediate']
+    marts:
+      finance:
+        +materialized: table
+        +schema: finance
+        +tags: ['finance', 'mart']
+      risk:
+        +materialized: table
+        +schema: risk
+        +tags: ['risk', 'mart']
+      compliance:
+        +materialized: table
+        +schema: compliance
+        +tags: ['compliance', 'mart']
+
+seeds:
+  barclays_migration:
+    +schema: seeds
+
+snapshots:
+  barclays_migration:
+    +target_schema: snapshots
+
+vars:
+  # Default business date for development/testing
+  business_date: "current_date"
+  # Toggle between Snowflake and Databricks syntax where needed
+  target_platform: "snowflake"  # or "databricks"

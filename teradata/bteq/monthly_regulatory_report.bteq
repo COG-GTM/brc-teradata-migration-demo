@@ -1,0 +1,74 @@
+/*******************************************************************************
+ * monthly_regulatory_report.bteq
+ *
+ * Month-end regulatory reporting batch:
+ *   1. Run regulatory capital calculation
+ *   2. Run P&L rollup
+ *   3. Export regulatory reports
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+DATABASE BARCLAYS_DWH;
+
+.SET WIDTH 200
+.SET ERRORLEVEL 3807 SEVERITY 0
+
+/* Determine first day of current month */
+SELECT 'Monthly regulatory batch started at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+/*---------------------------------------------------------------------------
+ * STEP 1: Regulatory capital calculation (Basel III)
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 1: sp_regulatory_capital_calc started';
+CALL BARCLAYS_DWH.sp_regulatory_capital_calc(
+    CURRENT_DATE - EXTRACT(DAY FROM CURRENT_DATE) + 1
+);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 1 complete';
+
+/*---------------------------------------------------------------------------
+ * STEP 2: Monthly P&L rollup
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 2: sp_monthly_pnl_rollup started';
+CALL BARCLAYS_DWH.sp_monthly_pnl_rollup(
+    CURRENT_DATE - EXTRACT(DAY FROM CURRENT_DATE) + 1
+);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 2 complete';
+
+/*---------------------------------------------------------------------------
+ * STEP 3: Validation queries for regulatory submission
+ *---------------------------------------------------------------------------*/
+SELECT 'Capital adequacy summary:';
+SELECT
+    asset_class,
+    total_exposure,
+    total_rwa,
+    capital_required,
+    capital_ratio
+FROM BARCLAYS_MART.MART_REGULATORY_CAPITAL
+WHERE reporting_date = CURRENT_DATE - EXTRACT(DAY FROM CURRENT_DATE) + 1
+  AND rollup_level = 'TOTAL';
+
+SELECT 'P&L summary:';
+SELECT
+    business_line,
+    gross_revenue,
+    net_profit,
+    cost_income_ratio
+FROM BARCLAYS_MART.MART_MONTHLY_PNL
+WHERE reporting_month = CURRENT_DATE - EXTRACT(DAY FROM CURRENT_DATE) + 1
+  AND rollup_level = 'BUSINESS_LINE';
+
+SELECT 'Monthly regulatory batch completed at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.GOTO FINISH
+
+.LABEL ERRORHANDLER
+SELECT 'ERROR: Monthly regulatory batch failed at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.QUIT 12
+
+.LABEL FINISH
+.LOGOFF;
+.QUIT 0;

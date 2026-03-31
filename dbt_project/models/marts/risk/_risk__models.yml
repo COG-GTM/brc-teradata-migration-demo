@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: fct_credit_risk_scores
+    description: >
+      Credit risk scores per customer with PD, LGD, EAD, and RWA.
+      Migrated from: teradata/stored_procedures/sp_customer_risk_scoring.sql
+      and teradata/ddl/05_mart_tables.sql (MART_CREDIT_RISK).
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+      - name: risk_rating
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['A', 'B', 'C', 'D', 'E']
+
+  - name: fct_regulatory_capital
+    description: >
+      Basel III regulatory capital calculations by asset class.
+      Migrated from: teradata/stored_procedures/sp_regulatory_capital_calc.sql
+      and teradata/ddl/05_mart_tables.sql (MART_REGULATORY_CAPITAL).
+      Replaces Teradata GROUP BY ROLLUP, CSUM, MAVG, MDIFF, NORMALIZE ON.
+    columns:
+      - name: capital_id
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_risk_ratings
+    description: >
+      Risk rating reference dimension with PD/LGD calibration.
+    columns:
+      - name: risk_rating
+        tests:
+          - unique
+          - not_null

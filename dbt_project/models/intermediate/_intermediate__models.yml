@@ -1,0 +1,55 @@
+version: 2
+
+models:
+  - name: int_daily_account_balances
+    description: >
+      Daily account balance snapshots computed from transaction data.
+      Migrated from: teradata/stored_procedures/sp_daily_transaction_load.sql
+      (balance calculation section).
+      Replaces Teradata MERGE INTO with dbt incremental materialization.
+    columns:
+      - name: account_id
+        tests:
+          - not_null
+      - name: balance_date
+        tests:
+          - not_null
+      - name: closing_balance
+        tests:
+          - not_null
+
+  - name: int_customer_risk_factors
+    description: >
+      Aggregated risk factors per customer for credit scoring.
+      Migrated from: teradata/stored_procedures/sp_customer_risk_scoring.sql.
+      Replaces Teradata VOLATILE TABLE, QUALIFY, ZEROIFNULL, and HASHROW.
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+
+  - name: int_transaction_enriched
+    description: >
+      Transactions enriched with account and counterparty details.
+      Joins staging models to provide a denormalized transaction view.
+    columns:
+      - name: transaction_id
+        tests:
+          - unique
+          - not_null
+
+  - name: int_aml_screening_flags
+    description: >
+      AML/sanctions screening flags derived from transaction patterns.
+      Migrated from: teradata/stored_procedures/sp_aml_screening.sql.
+      Replaces Teradata LIKE ANY, SOUNDEX, OREPLACE, OTRANSLATE,
+      and VOLATILE TABLE patterns.
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+      - name: alert_type
+        tests:
+          - accepted_values:
+              values: ['SANCTIONS_MATCH', 'STRUCTURING', 'VELOCITY_BREACH', 'HIGH_RISK_COUNTRY']

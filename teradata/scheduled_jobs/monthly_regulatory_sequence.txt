@@ -1,0 +1,41 @@
+################################################################################
+# Monthly Regulatory Reporting Sequence - Barclays Teradata Data Warehouse
+#
+# Scheduled via UC4/AutoSys/Control-M on the 1st business day of each month
+# Dependency: all daily ETL jobs for the prior month must have completed
+################################################################################
+
+# Job Name                              | Dependency                  | Schedule          | Description
+# --------------------------------------|-----------------------------|--------------------|----------------------------------
+# BRCL_MONTH_001_PREFLIGHT              | BRCL_DAILY_MONTH_COMPLETE   | 1st bus day 07:00  | Verify month-end data completeness
+# BRCL_MONTH_002_REG_CAPITAL            | BRCL_MONTH_001              | 1st bus day 07:15  | Basel III regulatory capital calc
+# BRCL_MONTH_003_PNL_ROLLUP            | BRCL_MONTH_001              | 1st bus day 07:15  | Monthly P&L rollup
+# BRCL_MONTH_004_BTEQ_REGULATORY       | BRCL_MONTH_002,003          | 1st bus day 08:00  | Regulatory report BTEQ (monthly_regulatory_report.bteq)
+# BRCL_MONTH_005_EXPORT_REGULATORY     | BRCL_MONTH_004              | 1st bus day 09:00  | Export regulatory files for PRA/FCA submission
+# BRCL_MONTH_006_EXPORT_PNL            | BRCL_MONTH_004              | 1st bus day 09:00  | Export P&L reports for finance
+# BRCL_MONTH_007_STATS_REFRESH         | BRCL_MONTH_004              | 1st bus day 09:30  | Full statistics refresh on mart tables
+# BRCL_MONTH_008_VALIDATION            | BRCL_MONTH_005,006,007      | 1st bus day 10:00  | Cross-check totals against GL
+# BRCL_MONTH_009_ARCHIVE               | BRCL_MONTH_008              | 1st bus day 10:30  | Archive prior month detail to history
+# BRCL_MONTH_010_NOTIFICATION          | BRCL_MONTH_008              | 1st bus day 10:30  | Notify regulatory ops and finance
+
+################################################################################
+# Execution Graph:
+#
+#   PREFLIGHT
+#      |
+#      +---> REG_CAPITAL ------+
+#      |                       |
+#      +---> PNL_ROLLUP ------+---> BTEQ_REGULATORY
+#                                       |
+#                      +----------------+----------------+
+#                      |                |                |
+#              EXPORT_REGULATORY  EXPORT_PNL      STATS_REFRESH
+#                      |                |                |
+#                      +-------+--------+--------+-------+
+#                              |
+#                         VALIDATION
+#                              |
+#                      +-------+-------+
+#                      |               |
+#                   ARCHIVE      NOTIFICATION
+################################################################################

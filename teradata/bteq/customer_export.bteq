@@ -1,0 +1,41 @@
+/*******************************************************************************
+ * customer_export.bteq
+ *
+ * Exports customer dimension data to a delimited file for downstream
+ * systems (e.g. CRM integration, regulatory reporting).
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+DATABASE BARCLAYS_DWH;
+
+.SET WIDTH 500
+.SET SEPARATOR '|'
+.SET TITLEDASHES OFF
+
+.EXPORT DATA FILE=${EXPORT_DIR}/customer_export_${YYYYMMDD}.dat
+
+SELECT
+    customer_id,
+    first_name,
+    last_name,
+    date_of_birth (FORMAT 'YYYY-MM-DD'),
+    nationality,
+    kyc_status,
+    risk_rating,
+    segment,
+    postcode,
+    country,
+    effective_from (FORMAT 'YYYY-MM-DD'),
+    effective_to (FORMAT 'YYYY-MM-DD'),
+    is_current
+FROM BARCLAYS_DWH.DIM_CUSTOMER
+WHERE is_current = 'Y'
+ORDER BY customer_id;
+
+.EXPORT RESET
+
+SELECT 'Exported ' || CAST(ACTIVITYCOUNT AS VARCHAR(20)) || ' customer records';
+
+.LOGOFF;
+.QUIT 0;

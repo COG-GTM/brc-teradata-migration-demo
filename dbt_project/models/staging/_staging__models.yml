@@ -1,0 +1,109 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: >
+      Cleansed customer records with deduplication.
+      Migrated from: teradata/ddl/03_staging_views.sql (V_CUSTOMER_LATEST).
+      Replaces Teradata QUALIFY ROW_NUMBER() with standard window function sub-query.
+    columns:
+      - name: customer_id
+        description: Unique customer identifier
+        tests:
+          - unique
+          - not_null
+      - name: first_name
+        tests:
+          - not_null
+      - name: last_name
+        tests:
+          - not_null
+      - name: date_of_birth
+        tests:
+          - not_null
+      - name: nationality
+        tests:
+          - not_null
+      - name: kyc_status
+        tests:
+          - accepted_values:
+              values: ['VERIFIED', 'PENDING', 'EXPIRED', 'FAILED']
+      - name: risk_rating
+        tests:
+          - accepted_values:
+              values: ['A', 'B', 'C', 'D', 'E']
+      - name: segment
+        tests:
+          - accepted_values:
+              values: ['RETAIL', 'WEALTH', 'CORPORATE']
+
+  - name: stg_accounts
+    description: >
+      Cleansed account records with derived status flags.
+      Migrated from: teradata/ddl/03_staging_views.sql (V_ACCOUNT_CURRENT).
+      Replaces Teradata ZEROIFNULL with coalesce().
+    columns:
+      - name: account_id
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+      - name: account_type
+        tests:
+          - accepted_values:
+              values: ['CURRENT', 'SAVINGS', 'LOAN', 'MORTGAGE', 'CREDIT_CARD']
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['ACTIVE', 'DORMANT', 'CLOSED', 'FROZEN']
+
+  - name: stg_transactions
+    description: >
+      Cleansed transaction records with value band classification.
+      Migrated from: teradata/ddl/03_staging_views.sql (V_TRANSACTION_ENRICHED).
+      Replaces Teradata date arithmetic and ZEROIFNULL.
+    columns:
+      - name: transaction_id
+        tests:
+          - unique
+          - not_null
+      - name: account_id
+        tests:
+          - not_null
+      - name: transaction_date
+        tests:
+          - not_null
+      - name: amount
+        tests:
+          - not_null
+
+  - name: stg_market_data
+    description: >
+      Latest market data rates with bid/ask spread.
+      Migrated from: teradata/ddl/03_staging_views.sql (V_MARKET_DATA_LATEST).
+    columns:
+      - name: instrument_id
+        tests:
+          - not_null
+      - name: valuation_date
+        tests:
+          - not_null
+
+  - name: stg_counterparties
+    description: >
+      Cleansed counterparty records with screening category.
+      Migrated from: teradata/ddl/03_staging_views.sql (V_COUNTERPARTY_SCREENED).
+    columns:
+      - name: counterparty_id
+        tests:
+          - unique
+          - not_null
+      - name: counterparty_name
+        tests:
+          - not_null
+      - name: screening_category
+        tests:
+          - accepted_values:
+              values: ['HIGH_RISK', 'MEDIUM_RISK', 'STANDARD']

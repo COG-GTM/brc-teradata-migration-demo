@@ -1,0 +1,70 @@
+/*******************************************************************************
+ * customer_export.tpt
+ *
+ * Teradata Parallel Transporter job to export customer dimension data
+ * to a delimited file for downstream system consumption.
+ ******************************************************************************/
+
+DEFINE JOB EXPORT_CUSTOMERS
+DESCRIPTION 'Export current customer dimension data to delimited file'
+(
+    DEFINE SCHEMA Customer_Export_Schema
+    (
+        customer_id         VARCHAR(10),
+        first_name          VARCHAR(100),
+        last_name           VARCHAR(100),
+        date_of_birth       VARCHAR(10),
+        nationality         VARCHAR(2),
+        kyc_status          VARCHAR(20),
+        risk_rating         VARCHAR(1),
+        segment             VARCHAR(20),
+        postcode            VARCHAR(10),
+        country             VARCHAR(2),
+        effective_from      VARCHAR(10),
+        is_current          VARCHAR(1)
+    );
+
+    DEFINE OPERATOR SQL_SELECTOR
+    TYPE SELECTOR
+    SCHEMA Customer_Export_Schema
+    ATTRIBUTES
+    (
+        VARCHAR USERNAME        = @UserName,
+        VARCHAR USERPASSWORD    = @UserPassword,
+        VARCHAR TdpId           = @TdpId,
+        INTEGER MAXSESSIONS     = 2,
+        VARCHAR SELECTSTMT      = 'SELECT
+            CAST(customer_id AS VARCHAR(10)),
+            TRIM(first_name),
+            TRIM(last_name),
+            CAST(date_of_birth AS VARCHAR(10)),
+            nationality,
+            kyc_status,
+            risk_rating,
+            segment,
+            TRIM(postcode),
+            country,
+            CAST(effective_from AS VARCHAR(10)),
+            is_current
+        FROM BARCLAYS_DWH.DIM_CUSTOMER
+        WHERE is_current = ''Y''
+        ORDER BY customer_id;'
+    );
+
+    DEFINE OPERATOR FILE_WRITER
+    TYPE DATACONNECTOR CONSUMER
+    SCHEMA Customer_Export_Schema
+    ATTRIBUTES
+    (
+        VARCHAR FILENAME        = @ExportFileName,
+        VARCHAR FORMAT          = 'DELIMITED',
+        VARCHAR TEXTDELIMITER   = '|',
+        VARCHAR OPERMODE        = 'WRITE',
+        VARCHAR OPENMODE        = 'Write',
+        VARCHAR INDICATORMODE   = 'N'
+    );
+
+    APPLY TO OPERATOR (FILE_WRITER[1])
+    SELECT *
+    FROM OPERATOR (SQL_SELECTOR[2]);
+);
