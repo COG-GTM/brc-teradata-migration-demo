@@ -5,5 +5,5 @@ packages:
   - package: dbt-labs/codegen
     version: [">=0.12.0", "<1.0.0"]
 
-  - package: calogica/dbt_expectations
+  - package: metaplane/dbt_expectations
     version: [">=0.10.0", "<1.0.0"]

@@ -61,6 +61,10 @@ models:
         tests:
           - accepted_values:
               values: ['ACTIVE', 'DORMANT', 'CLOSED', 'FROZEN']
+      - name: currency
+        tests:
+          - accepted_values:
+              values: ['GBP', 'EUR', 'USD']
 
   - name: stg_transactions
     description: >

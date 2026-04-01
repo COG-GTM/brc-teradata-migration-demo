@@ -9,6 +9,20 @@ with source as (
 
 ),
 
+-- Deduplication for Teradata SET table (row-level uniqueness)
+-- Uses ROW_NUMBER() subquery pattern for cross-database compatibility
+deduplicated as (
+
+    select
+        *,
+        row_number() over (
+            partition by counterparty_id
+            order by counterparty_id
+        ) as _rn
+    from source
+
+),
+
 screened as (
 
     select
@@ -32,7 +46,8 @@ screened as (
             else 'STANDARD'
         end as screening_category
 
-    from source
+    from deduplicated
+    where _rn = 1
 
 )
 
