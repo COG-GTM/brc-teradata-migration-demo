@@ -14,6 +14,9 @@ models:
       - name: account_id
         tests:
           - not_null
+          - relationships:
+              to: ref('dim_accounts')
+              field: account_id
       - name: transaction_date
         tests:
           - not_null
@@ -34,6 +37,10 @@ models:
       - name: reporting_month
         tests:
           - not_null
+      - name: business_line
+        tests:
+          - accepted_values:
+              values: ['RETAIL_BANKING', 'LENDING', 'CARDS', 'OTHER']
 
   - name: dim_accounts
     description: >
@@ -48,3 +55,6 @@ models:
       - name: customer_id
         tests:
           - not_null
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id

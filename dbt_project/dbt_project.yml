@@ -40,6 +40,17 @@ models:
 seeds:
   barclays_migration:
     +schema: seeds
+    # Sample data seeds go to 'raw' schema to match source definitions
+    customers:
+      +schema: raw
+    accounts:
+      +schema: raw
+    transactions:
+      +schema: raw
+    market_data:
+      +schema: raw
+    counterparties:
+      +schema: raw
 
 snapshots:
   barclays_migration:

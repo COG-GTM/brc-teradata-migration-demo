@@ -1,7 +1,9 @@
 -- Migrated from: teradata/ddl/03_staging_views.sql (V_MARKET_DATA_LATEST)
 -- Teradata constructs replaced:
---   QUALIFY ROW_NUMBER() -> sub-query with window function
+--   QUALIFY ROW_NUMBER() -> sub-query with window function (used for dedup only)
 --   LOCK ROW FOR ACCESS  -> removed
+-- Note: Full time-series is preserved (no latest-only filter) to support
+-- downstream regulatory capital trending (CSUM/MAVG/MDIFF patterns).
 
 with source as (
 
@@ -9,7 +11,8 @@ with source as (
 
 ),
 
-with_spread as (
+-- Deduplicate: keep one row per instrument_id + valuation_date
+deduplicated as (
 
     select
         instrument_id,
@@ -29,9 +32,9 @@ with_spread as (
         end as bid_ask_spread_pct,
 
         row_number() over (
-            partition by instrument_id
-            order by valuation_date desc
-        ) as row_num
+            partition by instrument_id, valuation_date
+            order by instrument_id
+        ) as _rn
 
     from source
 
@@ -48,5 +51,5 @@ select
     ask_price,
     bid_ask_spread_pct
 
-from with_spread
-where row_num = 1
+from deduplicated
+where _rn = 1

@@ -6,16 +6,40 @@ models:
       Credit risk scores per customer with PD, LGD, EAD, and RWA.
       Migrated from: teradata/stored_procedures/sp_customer_risk_scoring.sql
       and teradata/ddl/05_mart_tables.sql (MART_CREDIT_RISK).
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          min_value: 1
     columns:
       - name: customer_id
         tests:
           - unique
           - not_null
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
       - name: risk_rating
         tests:
           - not_null
           - accepted_values:
               values: ['A', 'B', 'C', 'D', 'E']
+      - name: probability_of_default
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+      - name: loss_given_default
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+      - name: exposure_at_default
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: risk_weighted_assets
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
 
   - name: fct_regulatory_capital
     description: >
@@ -23,11 +47,26 @@ models:
       Migrated from: teradata/stored_procedures/sp_regulatory_capital_calc.sql
       and teradata/ddl/05_mart_tables.sql (MART_REGULATORY_CAPITAL).
       Replaces Teradata GROUP BY ROLLUP, CSUM, MAVG, MDIFF, NORMALIZE ON.
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          min_value: 1
     columns:
       - name: capital_id
         tests:
           - unique
           - not_null
+      - name: total_exposure
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: total_rwa
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: capital_required
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
 
   - name: dim_risk_ratings
     description: >

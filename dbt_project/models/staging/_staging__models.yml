@@ -50,6 +50,9 @@ models:
       - name: customer_id
         tests:
           - not_null
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
       - name: account_type
         tests:
           - accepted_values:
@@ -58,6 +61,10 @@ models:
         tests:
           - accepted_values:
               values: ['ACTIVE', 'DORMANT', 'CLOSED', 'FROZEN']
+      - name: currency
+        tests:
+          - accepted_values:
+              values: ['GBP', 'EUR', 'USD']
 
   - name: stg_transactions
     description: >
@@ -72,12 +79,27 @@ models:
       - name: account_id
         tests:
           - not_null
+          - relationships:
+              to: ref('stg_accounts')
+              field: account_id
       - name: transaction_date
         tests:
           - not_null
       - name: amount
         tests:
           - not_null
+      - name: transaction_type
+        tests:
+          - accepted_values:
+              values: ['DEBIT', 'CREDIT', 'TRANSFER_IN', 'TRANSFER_OUT', 'FEE', 'INTEREST']
+      - name: channel
+        tests:
+          - accepted_values:
+              values: ['BRANCH', 'ONLINE', 'MOBILE', 'ATM', 'POS', 'BACS', 'CHAPS']
+      - name: value_band
+        tests:
+          - accepted_values:
+              values: ['MICRO', 'SMALL', 'MEDIUM', 'LARGE', 'VERY_LARGE']
 
   - name: stg_market_data
     description: >
@@ -90,6 +112,10 @@ models:
       - name: valuation_date
         tests:
           - not_null
+      - name: instrument_type
+        tests:
+          - accepted_values:
+              values: ['INTEREST_RATE', 'FX_RATE', 'EQUITY_INDEX', 'BOND_YIELD']
 
   - name: stg_counterparties
     description: >

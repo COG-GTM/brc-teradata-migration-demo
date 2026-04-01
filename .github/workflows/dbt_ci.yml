@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'dbt_project/**'
+      - '.github/workflows/dbt_ci.yml'
   push:
     branches:
       - main
@@ -11,7 +12,8 @@ on:
       - 'dbt_project/**'
 
 env:
-  DBT_PROFILES_DIR: ./dbt_project
+  CI_DB_USER: dbt_user
+  CI_DB_NAME: barclays_migration
 
 jobs:
   dbt-build:
@@ -22,9 +24,9 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER: dbt_user
-          POSTGRES_PASSWORD: dbt_password
-          POSTGRES_DB: barclays_migration
+          POSTGRES_USER: ${{ env.CI_DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci_only_ephemeral' }}
+          POSTGRES_DB: ${{ env.CI_DB_NAME }}
         ports:
           - 5432:5432
         options: >-
@@ -48,9 +50,11 @@ jobs:
           pip install dbt-postgres dbt-core
 
       - name: Create profiles.yml for CI
+        env:
+          CI_DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci_only_ephemeral' }}
         run: |
           mkdir -p ~/.dbt
-          cat > ~/.dbt/profiles.yml << 'EOF'
+          cat > ~/.dbt/profiles.yml <<EOF
           barclays_migration:
             target: postgres_local
             outputs:
@@ -58,12 +62,18 @@ jobs:
                 type: postgres
                 host: localhost
                 port: 5432
-                user: dbt_user
-                password: dbt_password
-                dbname: barclays_migration
+                user: ${CI_DB_USER}
+                password: ${CI_DB_PASSWORD}
+                dbname: ${CI_DB_NAME}
                 schema: public
                 threads: 4
           EOF
+
+      - name: Create raw schema
+        env:
+          PGPASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci_only_ephemeral' }}
+        run: |
+          psql -h localhost -U $CI_DB_USER -d $CI_DB_NAME -c "CREATE SCHEMA IF NOT EXISTS raw;"
 
       - name: Install dbt packages
         working-directory: ./dbt_project
