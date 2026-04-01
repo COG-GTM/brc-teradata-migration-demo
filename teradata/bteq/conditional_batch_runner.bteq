@@ -18,8 +18,9 @@ DATABASE BARCLAYS_DWH;
 /*---------------------------------------------------------------------------
  * Pre-flight: verify snapshot data exists
  *---------------------------------------------------------------------------*/
-SELECT COUNT(*) AS snapshot_row_count
-FROM BARCLAYS_DWH.DIM_CUSTOMER_SNAPSHOT;
+SELECT 1
+FROM BARCLAYS_DWH.DIM_CUSTOMER_SNAPSHOT
+SAMPLE 1;
 
 .IF ACTIVITYCOUNT = 0 THEN .GOTO NODATA
 

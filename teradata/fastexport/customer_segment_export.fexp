@@ -41,8 +41,6 @@ WHERE is_current = 'Y'
 .EXPORT OUTFILE ${EXPORT_DIR}/customer_wealth_corporate_${YYYYMMDD}.dat
 MODE RECORD FORMAT TEXT;
 
-SELECT DISTINCT CAST('customer_id | first_name | last_name | kyc_status | risk_rating | segment' AS CHAR(200));
-
 SELECT
     CAST(customer_id AS CHAR(10)),
     CAST(first_name AS CHAR(100)),
