@@ -46,8 +46,8 @@ prior_balances as (
     )
     {% else %}
     select
-        null::varchar as account_id,
-        0::numeric as prior_closing_balance
+        cast(null as {{ dbt.type_string() }}) as account_id,
+        cast(0 as numeric) as prior_closing_balance
     where 1 = 0
     {% endif %}
 
