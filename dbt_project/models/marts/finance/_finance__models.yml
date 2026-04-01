@@ -31,6 +31,15 @@ models:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
+      - name: transaction_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['DEBIT', 'CREDIT', 'TRANSFER_IN', 'TRANSFER_OUT', 'FEE', 'INTEREST']
+      - name: value_band
+        tests:
+          - accepted_values:
+              values: ['MICRO', 'SMALL', 'MEDIUM', 'LARGE', 'VERY_LARGE']
 
   - name: fct_monthly_pnl
     description: >
@@ -50,6 +59,17 @@ models:
           - not_null
           - accepted_values:
               values: ['DETAIL', 'BUSINESS_LINE', 'TOTAL']
+      - name: business_line
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['RETAIL_BANKING', 'LENDING', 'CARDS', 'OTHER', 'ALL']
+      - name: gross_revenue
+        tests:
+          - not_null
+      - name: net_revenue
+        tests:
+          - not_null
 
   - name: dim_accounts
     description: >
@@ -67,6 +87,14 @@ models:
           - relationships:
               to: ref('dim_customers')
               field: customer_id
+      - name: account_type
+        tests:
+          - accepted_values:
+              values: ['CURRENT', 'SAVINGS', 'LOAN', 'MORTGAGE', 'CREDIT_CARD']
+      - name: account_age_band
+        tests:
+          - accepted_values:
+              values: ['NEW', 'ESTABLISHED', 'MATURE']
 
   - name: dim_customers
     description: >

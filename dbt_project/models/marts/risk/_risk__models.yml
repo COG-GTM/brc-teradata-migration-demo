@@ -38,6 +38,11 @@ models:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
+      - name: expected_loss
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
 
   - name: fct_regulatory_capital
     description: >
@@ -55,6 +60,17 @@ models:
           - not_null
           - accepted_values:
               values: ['RETAIL', 'WEALTH', 'CORPORATE', 'ALL_CLASSES']
+      - name: rollup_level
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['ASSET_CLASS', 'TOTAL']
+      - name: total_exposure
+        tests:
+          - not_null
+      - name: total_rwa
+        tests:
+          - not_null
 
   - name: dim_risk_ratings
     description: >
