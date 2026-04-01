@@ -83,7 +83,7 @@ risk_factors as (
         end as derived_risk_rating,
 
         -- Deterministic bucket (replaces HASHBUCKET(HASHROW(customer_id)) MOD 10)
-        mod(abs(('x' || substring({{ dbt_utils.generate_surrogate_key(['ca.customer_id']) }}, 1, 8))::bit(32)::int), 10) as risk_bucket
+        mod(abs(('x' || substring({{ dbt_utils.generate_surrogate_key(['ca.customer_id']) }}, 1, 8))::bit(32)::bigint), 10) as risk_bucket
 
     from customer_accounts ca
     left join transaction_metrics tm
