@@ -63,7 +63,7 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['RETAIL_BANKING', 'LENDING', 'CARDS', 'OTHER', 'ALL']
+              values: ['RETAIL_BANKING', 'LENDING', 'CARDS', 'OTHER', 'ALL_LINES']
       - name: gross_revenue
         tests:
           - not_null
