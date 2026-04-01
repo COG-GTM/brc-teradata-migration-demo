@@ -4,11 +4,15 @@ on:
   pull_request:
     paths:
       - 'dbt_project/**'
+      - 'sample_data/**'
+      - '.github/workflows/dbt_ci.yml'
   push:
     branches:
       - main
     paths:
       - 'dbt_project/**'
+      - 'sample_data/**'
+      - '.github/workflows/dbt_ci.yml'
 
 jobs:
   dbt-build:
@@ -61,6 +65,70 @@ jobs:
                 schema: public
                 threads: 4
           EOF
+
+      - name: Create raw schema and load sample data
+        env:
+          PGPASSWORD: dbt_password
+        run: |
+          psql -h localhost -U dbt_user -d barclays_migration -c "CREATE SCHEMA IF NOT EXISTS raw;"
+          psql -h localhost -U dbt_user -d barclays_migration -c "
+            CREATE TABLE raw.customer (
+              customer_id VARCHAR(20) PRIMARY KEY,
+              first_name VARCHAR(100),
+              last_name VARCHAR(100),
+              date_of_birth DATE,
+              nationality VARCHAR(10),
+              kyc_status VARCHAR(20),
+              risk_rating VARCHAR(5),
+              onboarding_date DATE,
+              segment VARCHAR(20)
+            );
+            CREATE TABLE raw.account (
+              account_id VARCHAR(20) PRIMARY KEY,
+              customer_id VARCHAR(20),
+              account_type VARCHAR(30),
+              currency VARCHAR(10),
+              branch_code VARCHAR(20),
+              status VARCHAR(20),
+              open_date DATE,
+              close_date DATE
+            );
+            CREATE TABLE raw.transaction (
+              transaction_id VARCHAR(20) PRIMARY KEY,
+              account_id VARCHAR(20),
+              transaction_date DATE,
+              amount NUMERIC(18,2),
+              currency VARCHAR(10),
+              transaction_type VARCHAR(30),
+              counterparty_id VARCHAR(20),
+              description VARCHAR(200),
+              channel VARCHAR(30)
+            );
+            CREATE TABLE raw.counterparty (
+              counterparty_id VARCHAR(20) PRIMARY KEY,
+              counterparty_name VARCHAR(200),
+              counterparty_type VARCHAR(30),
+              country_code VARCHAR(10),
+              lei VARCHAR(30),
+              is_sanctions_listed BOOLEAN,
+              is_pep BOOLEAN
+            );
+            CREATE TABLE raw.market_data (
+              instrument_id VARCHAR(30),
+              valuation_date DATE,
+              instrument_type VARCHAR(30),
+              instrument_name VARCHAR(100),
+              currency VARCHAR(10),
+              mid_price NUMERIC(18,4),
+              bid_price NUMERIC(18,4),
+              ask_price NUMERIC(18,4)
+            );
+          "
+          psql -h localhost -U dbt_user -d barclays_migration -c "\copy raw.customer FROM 'sample_data/customers.csv' WITH CSV HEADER"
+          psql -h localhost -U dbt_user -d barclays_migration -c "\copy raw.account FROM 'sample_data/accounts.csv' WITH CSV HEADER"
+          psql -h localhost -U dbt_user -d barclays_migration -c "\copy raw.transaction FROM 'sample_data/transactions.csv' WITH CSV HEADER"
+          psql -h localhost -U dbt_user -d barclays_migration -c "\copy raw.counterparty FROM 'sample_data/counterparties.csv' WITH CSV HEADER"
+          psql -h localhost -U dbt_user -d barclays_migration -c "\copy raw.market_data FROM 'sample_data/market_data.csv' WITH CSV HEADER"
 
       - name: Install dbt packages
         working-directory: ./dbt_project
