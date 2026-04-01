@@ -1,0 +1,72 @@
+/*******************************************************************************
+ * customer_data_export.tpt
+ *
+ * Teradata Parallel Transporter job to export customer data to a text file
+ * using the EXPORT operator with the DataConnector consumer.
+ *
+ * This is a variant of customer_dimension_export.tpt using a different
+ * TdpId configuration pattern, demonstrating environment-specific overrides.
+ *
+ * Migrated from COG-GTM/Teradata-Utilities-Script tptscript.txt
+ ******************************************************************************/
+
+DEFINE JOB EXPORT_CUSTOMER_DATA
+DESCRIPTION 'Export customer data to text file via EXPORT operator'
+(
+    DEFINE SCHEMA Customer_Schema
+    (
+        customer_id         CHAR(10),
+        first_name          CHAR(100),
+        last_name           CHAR(100),
+        date_of_birth       CHAR(10),
+        nationality         CHAR(2),
+        kyc_status          CHAR(20),
+        risk_rating         CHAR(1),
+        segment             CHAR(20),
+        postcode            CHAR(10),
+        country             CHAR(2)
+    );
+
+    DEFINE OPERATOR FILE_WRITER
+    TYPE DATACONNECTOR CONSUMER
+    SCHEMA Customer_Schema
+    ATTRIBUTES
+    (
+        VARCHAR FILENAME        = @ExportFileName,
+        VARCHAR FORMAT          = 'TEXT',
+        VARCHAR OPERMODE        = 'WRITE',
+        VARCHAR INDICATORMODE   = 'N'
+    );
+
+    DEFINE OPERATOR EXPORT_CUSTOMER
+    TYPE EXPORT
+    SCHEMA Customer_Schema
+    ATTRIBUTES
+    (
+        VARCHAR USERNAME        = @UserName,
+        VARCHAR USERPASSWORD    = @UserPassword,
+        VARCHAR TdpId           = @TdpId,
+        INTEGER MAXSESSIONS     = 4,
+        VARCHAR SELECTSTMT      = 'SELECT
+            CAST(customer_id AS CHAR(10)),
+            CAST(first_name AS CHAR(100)),
+            CAST(last_name AS CHAR(100)),
+            CAST(date_of_birth AS CHAR(10)),
+            CAST(nationality AS CHAR(2)),
+            CAST(kyc_status AS CHAR(20)),
+            CAST(risk_rating AS CHAR(1)),
+            CAST(segment AS CHAR(20)),
+            CAST(postcode AS CHAR(10)),
+            CAST(country AS CHAR(2))
+        FROM BARCLAYS_DWH.DIM_CUSTOMER
+        WHERE is_current = ''Y''
+        ORDER BY customer_id;'
+    );
+
+    APPLY TO OPERATOR (FILE_WRITER[1])
+    SELECT
+        CUSTOMER_ID, FIRST_NAME, LAST_NAME, DATE_OF_BIRTH,
+        NATIONALITY, KYC_STATUS, RISK_RATING, SEGMENT,
+        POSTCODE, COUNTRY
+    FROM OPERATOR (EXPORT_CUSTOMER[2]);
+);

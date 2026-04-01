@@ -1,0 +1,101 @@
+/*******************************************************************************
+ * customer_tpt_load.tpt
+ *
+ * Teradata Parallel Transporter job to load customer data from a
+ * pipe-delimited file into BARCLAYS_RAW.CUSTOMER_STAGING using the
+ * LOAD operator (FastLoad protocol).
+ *
+ * Migrated from COG-GTM/Teradata-Utilities-Script mloadtpt.txt
+ * Pattern based on COG-GTM/Teradata-Utilities-Script
+ ******************************************************************************/
+
+DEFINE JOB LOAD_CUSTOMER_DATA
+DESCRIPTION 'Load customer data from delimited file into BARCLAYS_RAW.CUSTOMER_STAGING'
+(
+    DEFINE SCHEMA Customer_Load_Schema
+    (
+        customer_id         VARCHAR(10),
+        first_name          VARCHAR(100),
+        last_name           VARCHAR(100),
+        date_of_birth       VARCHAR(10),
+        nationality         VARCHAR(2),
+        kyc_status          VARCHAR(20),
+        risk_rating         VARCHAR(1),
+        segment             VARCHAR(20),
+        postcode            VARCHAR(10),
+        country             VARCHAR(2)
+    );
+
+    DEFINE OPERATOR FILE_READER
+    TYPE DATACONNECTOR PRODUCER
+    SCHEMA Customer_Load_Schema
+    ATTRIBUTES
+    (
+        VARCHAR FILENAME        = @FileName,
+        VARCHAR FORMAT          = 'DELIMITED',
+        VARCHAR TEXTDELIMITER   = '|',
+        VARCHAR OPERMODE        = 'READ',
+        VARCHAR INDICATORMODE   = 'N',
+        VARCHAR OPENMODE        = 'Read',
+        VARCHAR SKIPROWS        = '1'
+    );
+
+    DEFINE OPERATOR LOAD_CUSTOMER
+    TYPE LOAD
+    SCHEMA Customer_Load_Schema
+    ATTRIBUTES
+    (
+        VARCHAR USERNAME        = @UserName,
+        VARCHAR USERPASSWORD    = @UserPassword,
+        VARCHAR TdpId           = @TdpId,
+        INTEGER MAXSESSIONS     = 4,
+        VARCHAR WORKINGDATABASE = 'BARCLAYS_RAW',
+        VARCHAR LOGTABLE        = 'BARCLAYS_RAW.CUST_TPT_LOG',
+        VARCHAR TARGETTABLE     = 'BARCLAYS_RAW.CUSTOMER_STAGING',
+        VARCHAR ERRORTABLE1     = 'BARCLAYS_RAW.CUST_TPT_ET',
+        VARCHAR ERRORTABLE2     = 'BARCLAYS_RAW.CUST_TPT_UV'
+    );
+
+    APPLY
+    (
+        'INSERT INTO BARCLAYS_RAW.CUSTOMER_STAGING
+        (
+            CUSTOMER_ID,
+            FIRST_NAME,
+            LAST_NAME,
+            DATE_OF_BIRTH,
+            NATIONALITY,
+            KYC_STATUS,
+            RISK_RATING,
+            SEGMENT,
+            POSTCODE,
+            COUNTRY
+        )
+        VALUES
+        (
+            CAST(:CUSTOMER_ID AS INTEGER),
+            :FIRST_NAME,
+            :LAST_NAME,
+            CAST(:DATE_OF_BIRTH AS DATE FORMAT ''YYYY-MM-DD''),
+            :NATIONALITY,
+            :KYC_STATUS,
+            :RISK_RATING,
+            :SEGMENT,
+            :POSTCODE,
+            :COUNTRY
+        );'
+    )
+    TO OPERATOR (LOAD_CUSTOMER[1])
+    SELECT
+        CUSTOMER_ID,
+        FIRST_NAME,
+        LAST_NAME,
+        DATE_OF_BIRTH,
+        NATIONALITY,
+        KYC_STATUS,
+        RISK_RATING,
+        SEGMENT,
+        POSTCODE,
+        COUNTRY
+    FROM OPERATOR (FILE_READER[2]);
+);

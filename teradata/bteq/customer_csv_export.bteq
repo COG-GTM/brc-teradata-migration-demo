@@ -1,0 +1,42 @@
+/*******************************************************************************
+ * customer_csv_export.bteq
+ *
+ * Exports customer ID and segment data to a comma-separated (CSV) file.
+ * Uses inline CAST / concatenation to produce CSV output without relying
+ * on .SET SEPARATOR (useful when column-level formatting is required).
+ *
+ * Migrated from COG-GTM/Teradata-Utilities-Script csvexport.bteq.txt
+ * Original pattern: .EXPORT FILE with CAST/concatenation for CSV
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+DATABASE BARCLAYS_DWH;
+
+.SET WIDTH 500
+.SET TITLEDASHES OFF
+
+/*---------------------------------------------------------------------------
+ * Export customer summary as CSV via inline concatenation
+ *---------------------------------------------------------------------------*/
+.EXPORT FILE=${EXPORT_DIR}/customer_summary_${YYYYMMDD}.csv
+
+SELECT
+    CAST(customer_id AS VARCHAR(10)) || ',' ||
+    TRIM(first_name) || ',' ||
+    TRIM(last_name) || ',' ||
+    CAST(date_of_birth AS VARCHAR(10)) || ',' ||
+    TRIM(nationality) || ',' ||
+    TRIM(kyc_status) || ',' ||
+    risk_rating || ',' ||
+    TRIM(segment)
+FROM BARCLAYS_DWH.DIM_CUSTOMER
+WHERE is_current = 'Y'
+ORDER BY customer_id;
+
+.EXPORT RESET
+
+SELECT 'Exported ' || CAST(ACTIVITYCOUNT AS VARCHAR(20)) || ' customer records (CSV format)';
+
+.LOGOFF;
+.QUIT 0;

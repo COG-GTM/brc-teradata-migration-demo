@@ -1,0 +1,35 @@
+/*******************************************************************************
+ * customer_export.fexp
+ *
+ * FastExport script to extract customer data to a pipe-delimited text file.
+ * FastExport is optimised for high-volume data extraction from Teradata,
+ * using block-level transfers for maximum throughput.
+ *
+ * Migrated from COG-GTM/Teradata-Utilities-Script FastExport.fexp.txt
+ ******************************************************************************/
+
+.LOGTABLE BARCLAYS_DWH.CUST_FEXP_LOG;
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+.BEGIN EXPORT SESSIONS 4;
+
+.EXPORT OUTFILE ${EXPORT_DIR}/customer_fastexport_${YYYYMMDD}.dat
+MODE RECORD FORMAT TEXT;
+
+SELECT
+    CAST(customer_id AS CHAR(10))   || '|' ||
+    CAST(first_name AS CHAR(100))   || '|' ||
+    CAST(last_name AS CHAR(100))    || '|' ||
+    CAST(date_of_birth AS CHAR(10)) || '|' ||
+    CAST(nationality AS CHAR(2))    || '|' ||
+    CAST(kyc_status AS CHAR(20))    || '|' ||
+    CAST(risk_rating AS CHAR(1))    || '|' ||
+    CAST(segment AS CHAR(20))       || '|' ||
+    CAST(postcode AS CHAR(10))      || '|' ||
+    CAST(country AS CHAR(2))
+FROM BARCLAYS_DWH.DIM_CUSTOMER
+WHERE is_current = 'Y';
+
+.END EXPORT;
+
+.LOGOFF;
