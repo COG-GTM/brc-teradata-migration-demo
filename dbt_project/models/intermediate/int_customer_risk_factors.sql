@@ -18,10 +18,10 @@ with customer_accounts as (
         c.date_of_birth,
 
         -- Age calculation (replaces Teradata date arithmetic)
-        datediff('year', c.date_of_birth, current_date) as customer_age,
+        (date_part('year', current_date) - date_part('year', c.date_of_birth))::int as customer_age,
 
         -- Tenure in years
-        datediff('year', c.onboarding_date, current_date) as tenure_years,
+        (date_part('year', current_date) - date_part('year', c.onboarding_date))::int as tenure_years,
 
         count(distinct a.account_id) as account_count,
         sum(case when a.status = 'ACTIVE' then 1 else 0 end) as active_account_count
@@ -83,7 +83,13 @@ risk_factors as (
         end as derived_risk_rating,
 
         -- Deterministic bucket (replaces HASHBUCKET(HASHROW(customer_id)) MOD 10)
-        mod(abs({{ dbt_utils.generate_surrogate_key(['ca.customer_id']) }}), 10) as risk_bucket
+        -- generate_surrogate_key returns text hash; convert first 8 hex chars to integer
+        mod(
+            abs(
+                ('x' || substring({{ dbt_utils.generate_surrogate_key(['ca.customer_id']) }}, 1, 8))::bit(32)::int
+            ),
+            10
+        ) as risk_bucket
 
     from customer_accounts ca
     left join transaction_metrics tm

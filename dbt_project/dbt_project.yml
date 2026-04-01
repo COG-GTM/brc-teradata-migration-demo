@@ -40,6 +40,21 @@ models:
 seeds:
   barclays_migration:
     +schema: seeds
+    raw_customers:
+      +schema: raw
+      +alias: customer
+    raw_accounts:
+      +schema: raw
+      +alias: account
+    raw_transactions:
+      +schema: raw
+      +alias: transaction
+    raw_counterparties:
+      +schema: raw
+      +alias: counterparty
+    raw_market_data:
+      +schema: raw
+      +alias: market_data
 
 snapshots:
   barclays_migration:

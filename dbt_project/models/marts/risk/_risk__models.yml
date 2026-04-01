@@ -16,6 +16,28 @@ models:
           - not_null
           - accepted_values:
               values: ['A', 'B', 'C', 'D', 'E']
+      - name: probability_of_default
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+      - name: loss_given_default
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+      - name: exposure_at_default
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: risk_weighted_assets
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
 
   - name: fct_regulatory_capital
     description: >
@@ -28,6 +50,11 @@ models:
         tests:
           - unique
           - not_null
+      - name: asset_class
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['RETAIL', 'WEALTH', 'CORPORATE', 'ALL_CLASSES']
 
   - name: dim_risk_ratings
     description: >

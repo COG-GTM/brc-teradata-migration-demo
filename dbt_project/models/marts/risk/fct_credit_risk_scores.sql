@@ -11,12 +11,6 @@ with risk_factors as (
 
 ),
 
-risk_ratings as (
-
-    select * from {{ ref('risk_rating_codes') }}
-
-),
-
 scored as (
 
     select
