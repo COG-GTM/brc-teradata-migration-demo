@@ -120,14 +120,14 @@ with_analytics as (
 
         -- YTD running totals (replaces Teradata CSUM)
         sum(c.net_revenue) over (
-            partition by c.business_line, c.rollup_level, extract(year from c.reporting_month)
+            partition by c.business_line, c.product_type, c.rollup_level, extract(year from c.reporting_month)
             order by c.reporting_month
             rows unbounded preceding
         ) as ytd_net_revenue,
 
         -- 3-month moving average (replaces Teradata MAVG)
         avg(c.net_revenue) over (
-            partition by c.business_line, c.rollup_level
+            partition by c.business_line, c.product_type, c.rollup_level
             order by c.reporting_month
             rows between 2 preceding and current row
         ) as ma3_net_revenue
