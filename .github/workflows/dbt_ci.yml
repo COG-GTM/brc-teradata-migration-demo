@@ -69,7 +69,7 @@ jobs:
 
       - name: Create raw schema
         run: |
-          PGPASSWORD=dbt_password psql -h localhost -U dbt_user -d barclays_migration -c "CREATE SCHEMA IF NOT EXISTS raw;"
+          PGPASSWORD=dbt_password psql -h localhost -U dbt_user -d barclays_migration -c "CREATE SCHEMA IF NOT EXISTS public_raw;"
 
       - name: Install dbt packages
         working-directory: ./dbt_project
