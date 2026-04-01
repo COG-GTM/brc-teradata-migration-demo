@@ -13,7 +13,7 @@
     )
 }}
 
-with balances as (
+with new_balances as (
 
     select * from {{ ref('int_daily_account_balances') }}
 
@@ -22,6 +22,44 @@ with balances as (
     {% endif %}
 
 ),
+
+{% if is_incremental() %}
+-- Fetch the latest existing row per account from the target table so that
+-- lag() can look back across the incremental boundary.
+prior_boundary as (
+
+    select
+        account_id,
+        balance_date,
+        opening_balance,
+        closing_balance,
+        total_debits,
+        total_credits,
+        transaction_count
+    from {{ this }}
+    where (account_id, balance_date) in (
+        select account_id, max(balance_date)
+        from {{ this }}
+        group by account_id
+    )
+
+),
+
+-- Union boundary rows with new rows so lag() sees the prior closing balance
+balances as (
+
+    select *, false as _is_boundary from new_balances
+    union all
+    select *, true as _is_boundary from prior_boundary
+
+),
+{% else %}
+balances as (
+
+    select *, false as _is_boundary from new_balances
+
+),
+{% endif %}
 
 accounts as (
 
@@ -44,6 +82,7 @@ with_prior as (
         b.total_debits,
         b.total_credits,
         b.transaction_count,
+        b._is_boundary,
 
         -- Prior day closing balance for daily change calculation
         lag(b.closing_balance) over (
@@ -82,3 +121,5 @@ select
 from with_prior wp
 inner join accounts a
     on wp.account_id = a.account_id
+-- Exclude the boundary rows so they are not re-inserted into the target
+where not wp._is_boundary
