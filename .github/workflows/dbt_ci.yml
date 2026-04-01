@@ -10,9 +10,6 @@ on:
     paths:
       - 'dbt_project/**'
 
-env:
-  DBT_PROFILES_DIR: ./dbt_project
-
 jobs:
   dbt-build:
     name: dbt build & test
