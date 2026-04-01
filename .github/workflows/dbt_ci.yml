@@ -50,9 +50,11 @@ jobs:
           pip install dbt-postgres dbt-core
 
       - name: Create profiles.yml for CI
+        env:
+          DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci_only_ephemeral' }}
         run: |
           mkdir -p ~/.dbt
-          cat > ~/.dbt/profiles.yml <<'PROFILES_EOF'
+          cat > ~/.dbt/profiles.yml <<PROFILES_EOF
           barclays_migration:
             target: postgres_ci
             outputs:
@@ -61,7 +63,7 @@ jobs:
                 host: localhost
                 port: 5432
                 user: dbt_user
-                password: ci_only_ephemeral
+                password: ${DB_PASSWORD}
                 dbname: barclays_migration
                 schema: public
                 threads: 4

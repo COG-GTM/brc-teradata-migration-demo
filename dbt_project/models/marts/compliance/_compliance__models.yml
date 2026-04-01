@@ -26,6 +26,11 @@ models:
         tests:
           - accepted_values:
               values: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+      - name: alert_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['OPEN', 'CLOSED', 'UNDER_REVIEW']
 
   - name: fct_kyc_status
     description: >
@@ -41,3 +46,12 @@ models:
           - not_null
           - accepted_values:
               values: ['VERIFIED', 'PENDING', 'EXPIRED', 'FAILED']
+      - name: compliance_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['COMPLIANT', 'IN_PROGRESS', 'OVERDUE', 'REMEDIATION_REQUIRED', 'UNKNOWN']
+      - name: segment
+        tests:
+          - accepted_values:
+              values: ['RETAIL', 'WEALTH', 'CORPORATE']

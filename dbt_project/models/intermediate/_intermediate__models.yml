@@ -17,6 +17,12 @@ models:
       - name: closing_balance
         tests:
           - not_null
+      - name: total_debits
+        tests:
+          - not_null
+      - name: total_credits
+        tests:
+          - not_null
 
   - name: int_customer_risk_factors
     description: >
@@ -27,6 +33,14 @@ models:
       - name: customer_id
         tests:
           - unique
+          - not_null
+      - name: derived_risk_rating
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['A', 'B', 'C', 'D', 'E']
+      - name: risk_bucket
+        tests:
           - not_null
 
   - name: int_transaction_enriched
@@ -46,10 +60,20 @@ models:
       Replaces Teradata LIKE ANY, SOUNDEX, OREPLACE, OTRANSLATE,
       and VOLATILE TABLE patterns.
     columns:
+      - name: alert_id
+        tests:
+          - unique
+          - not_null
       - name: customer_id
         tests:
           - not_null
       - name: alert_type
         tests:
+          - not_null
           - accepted_values:
               values: ['SANCTIONS_MATCH', 'STRUCTURING', 'VELOCITY_BREACH', 'HIGH_RISK_COUNTRY']
+      - name: alert_severity
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']

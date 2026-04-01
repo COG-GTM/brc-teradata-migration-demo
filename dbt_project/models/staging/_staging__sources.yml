@@ -8,12 +8,13 @@ sources:
     database: "{{ env_var('DBT_RAW_DATABASE', 'barclays_migration') }}"
     schema: "{{ env_var('DBT_RAW_SCHEMA', 'raw') }}"
     loader: external_etl
-    # loaded_at_field and freshness disabled for CI (seeds lack etl_loaded_ts)
-    # Uncomment for production with real source tables:
+    # Source freshness monitoring — disabled for CI (seeds lack etl_loaded_ts).
+    # Enable for production by uncommenting the lines below.
     # loaded_at_field: etl_loaded_ts
     # freshness:
     #   warn_after: {count: 24, period: hour}
     #   error_after: {count: 48, period: hour}
+    # To run: dbt source freshness --select source:barclays_raw
 
     tables:
       - name: customer
