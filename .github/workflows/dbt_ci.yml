@@ -50,24 +50,23 @@ jobs:
           pip install dbt-postgres dbt-core
 
       - name: Create profiles.yml for CI
-        env:
-          CI_DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci_only_ephemeral' }}
         run: |
           mkdir -p ~/.dbt
-          cat > ~/.dbt/profiles.yml <<EOF
+          cat > ~/.dbt/profiles.yml <<'PROFILES_EOF'
           barclays_migration:
-            target: postgres_local
+            target: postgres_ci
             outputs:
-              postgres_local:
+              postgres_ci:
                 type: postgres
                 host: localhost
                 port: 5432
-                user: ${CI_DB_USER}
-                password: ${CI_DB_PASSWORD}
-                dbname: ${CI_DB_NAME}
+                user: dbt_user
+                password: ci_only_ephemeral
+                dbname: barclays_migration
                 schema: public
                 threads: 4
-          EOF
+          PROFILES_EOF
+          sed -i 's/^          //' ~/.dbt/profiles.yml
 
       - name: Create raw schema
         env:
@@ -81,7 +80,7 @@ jobs:
 
       - name: Load seed data
         working-directory: ./dbt_project
-        run: dbt seed
+        run: dbt seed --full-refresh
 
       - name: Run dbt models
         working-directory: ./dbt_project

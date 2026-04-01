@@ -40,17 +40,37 @@ models:
 seeds:
   barclays_migration:
     +schema: seeds
-    # Sample data seeds go to 'raw' schema to match source definitions
-    customers:
+    raw_sources:
       +schema: raw
-    accounts:
-      +schema: raw
-    transactions:
-      +schema: raw
-    market_data:
-      +schema: raw
-    counterparties:
-      +schema: raw
+      customer:
+        +column_types:
+          customer_id: varchar(10)
+          date_of_birth: date
+          onboarding_date: date
+      account:
+        +column_types:
+          account_id: varchar(10)
+          customer_id: varchar(10)
+          open_date: date
+          close_date: date
+      transaction:
+        +column_types:
+          transaction_id: varchar(10)
+          account_id: varchar(10)
+          transaction_date: date
+          amount: numeric(18,2)
+          counterparty_id: varchar(10)
+      market_data:
+        +column_types:
+          valuation_date: date
+          mid_price: numeric(18,8)
+          bid_price: numeric(18,8)
+          ask_price: numeric(18,8)
+      counterparty:
+        +column_types:
+          counterparty_id: varchar(10)
+          is_sanctions_listed: boolean
+          is_pep: boolean
 
 snapshots:
   barclays_migration:

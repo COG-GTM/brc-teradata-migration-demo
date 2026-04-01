@@ -6,6 +6,8 @@ with source_counts as (
 
     select 'customers' as entity, count(*) as source_rows from {{ source('barclays_raw', 'customer') }}
     union all
+    select 'accounts', count(*) from {{ source('barclays_raw', 'account') }}
+    union all
     select 'transactions', count(*) from {{ source('barclays_raw', 'transaction') }}
     union all
     select 'counterparties', count(*) from {{ source('barclays_raw', 'counterparty') }}
@@ -17,6 +19,8 @@ with source_counts as (
 staging_counts as (
 
     select 'customers' as entity, count(*) as staging_rows from {{ ref('stg_customers') }}
+    union all
+    select 'accounts', count(*) from {{ ref('stg_accounts') }}
     union all
     select 'transactions', count(*) from {{ ref('stg_transactions') }}
     union all

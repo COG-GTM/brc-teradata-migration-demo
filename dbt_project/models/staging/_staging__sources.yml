@@ -6,12 +6,17 @@ sources:
       Raw landing zone tables migrated from the Teradata BARCLAYS_RAW database.
       These tables are loaded by upstream ETL processes (previously TPT/FastLoad/MultiLoad).
     database: "{{ env_var('DBT_RAW_DATABASE', 'barclays_migration') }}"
-    schema: raw
+    schema: "{{ env_var('DBT_RAW_SCHEMA', 'raw') }}"
     loader: external_etl
+    # loaded_at_field and freshness disabled for CI (seeds lack etl_loaded_ts)
+    # Uncomment for production with real source tables:
+    # loaded_at_field: etl_loaded_ts
+    # freshness:
+    #   warn_after: {count: 24, period: hour}
+    #   error_after: {count: 48, period: hour}
 
     tables:
       - name: customer
-        identifier: customers
         description: >
           Customer master data. Migrated from Teradata SET table BARCLAYS_RAW.CUSTOMER.
           Original PI: customer_id.
@@ -39,7 +44,6 @@ sources:
             description: "Customer segment: RETAIL, WEALTH, CORPORATE"
 
       - name: account
-        identifier: accounts
         description: >
           Account records. Migrated from Teradata MULTISET table BARCLAYS_RAW.ACCOUNT.
           Original PI: account_id, PPI: RANGE_N on open_date.
@@ -67,7 +71,6 @@ sources:
             description: Date account was closed (null if still open)
 
       - name: transaction
-        identifier: transactions
         description: >
           Financial transactions. Migrated from Teradata MULTISET table BARCLAYS_RAW.TRANSACTION.
           Original PI: transaction_id, PPI: RANGE_N on transaction_date (monthly).
@@ -119,7 +122,6 @@ sources:
             description: Ask/offer price
 
       - name: counterparty
-        identifier: counterparties
         description: >
           Counterparty reference data. Migrated from Teradata SET table BARCLAYS_RAW.COUNTERPARTY.
         columns:
