@@ -24,9 +24,9 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER: ${{ env.CI_DB_USER }}
+          POSTGRES_USER: dbt_user
           POSTGRES_PASSWORD: ${{ secrets.CI_DB_PASSWORD || 'ci_only_ephemeral' }}
-          POSTGRES_DB: ${{ env.CI_DB_NAME }}
+          POSTGRES_DB: barclays_migration
         ports:
           - 5432:5432
         options: >-
