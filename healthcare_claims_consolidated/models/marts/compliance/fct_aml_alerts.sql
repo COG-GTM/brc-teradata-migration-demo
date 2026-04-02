@@ -17,7 +17,7 @@ with screening_flags as (
     select * from {{ ref('int_aml_screening_flags') }}
 
     {% if is_incremental() %}
-    where alert_date > (select max(alert_date) from {{ this }})
+    where alert_date >= (select max(alert_date) from {{ this }})
     {% endif %}
 
 )

@@ -6,6 +6,10 @@
 --   ZEROIFNULL(x)                             -> coalesce(x, 0)
 --   COLLECT STATISTICS                        -> not needed
 -- Now operates on unified cross-platform transactions.
+--
+-- Fix: Uses cumulative window sum to correctly cascade balances within
+-- a multi-day incremental batch. Each day's opening balance is the prior
+-- day's closing balance, even when multiple days arrive in the same run.
 -- =============================================================================
 
 {{
@@ -54,17 +58,39 @@ prior_balances as (
     where 1 = 0
     {% endif %}
 
+),
+
+-- Compute cumulative net movement within the batch so that multi-day
+-- batches correctly cascade: day N+1 opening = day N closing.
+daily_with_cumulative as (
+
+    select
+        dt.account_id,
+        dt.balance_date,
+        dt.total_credits,
+        dt.total_debits,
+        dt.net_movement,
+        dt.transaction_count,
+        coalesce(pb.prior_closing_balance, 0) as seed_balance,
+        sum(dt.net_movement) over (
+            partition by dt.account_id
+            order by dt.balance_date
+            rows between unbounded preceding and current row
+        ) as cumulative_net_movement
+
+    from daily_transactions dt
+    left join prior_balances pb
+        on dt.account_id = pb.account_id
+
 )
 
 select
-    dt.account_id,
-    dt.balance_date,
-    coalesce(pb.prior_closing_balance, 0) as opening_balance,
-    coalesce(pb.prior_closing_balance, 0) + dt.net_movement as closing_balance,
-    dt.total_debits,
-    dt.total_credits,
-    dt.transaction_count
+    account_id,
+    balance_date,
+    seed_balance + cumulative_net_movement - net_movement as opening_balance,
+    seed_balance + cumulative_net_movement as closing_balance,
+    total_debits,
+    total_credits,
+    transaction_count
 
-from daily_transactions dt
-left join prior_balances pb
-    on dt.account_id = pb.account_id
+from daily_with_cumulative
