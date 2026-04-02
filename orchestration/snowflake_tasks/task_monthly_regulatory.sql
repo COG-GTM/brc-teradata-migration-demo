@@ -30,13 +30,14 @@ USE SCHEMA orchestration;
 -- =============================================================================
 -- ROOT TASK: Monthly pre-flight checks
 -- Replaces: BRCL_MONTH_001_PREFLIGHT
--- Schedule: 1st of each month at 07:00 UTC
--- Uses CRON expression to run on the 1st; a stored procedure checks if it's
--- a business day and skips if not (Snowflake CRON does not support "1st biz day").
+-- Schedule: 1st-3rd of each month at 07:00 UTC
+-- Runs on days 1-3 to handle weekends: if the 1st falls on a weekend, the task
+-- fires on 2nd and 3rd as well. Only the first business day proceeds; subsequent
+-- days detect a completed run and abort.
 -- =============================================================================
 CREATE OR REPLACE TASK monthly_preflight
   WAREHOUSE = compute_wh
-  SCHEDULE  = 'USING CRON 0 7 1 * * UTC'
+  SCHEDULE  = 'USING CRON 0 7 1-3 * * UTC'
   COMMENT   = 'Monthly pre-flight: verify month-end data completeness before regulatory calcs'
 AS
 BEGIN
@@ -45,15 +46,29 @@ BEGIN
   LET v_month_end DATE := LAST_DAY(:v_reporting_month);
 
   -- Check if today is a business day (skip weekends)
+  -- Use SYSTEM$ABORT to prevent child tasks from executing
   IF (DAYOFWEEK(CURRENT_DATE()) IN (0, 6)) THEN
       INSERT INTO barclays_dwh.etl_audit_log (
           pipeline_name, step_name, status, row_count, started_at, completed_at, details
       ) VALUES (
           'MONTHLY_REGULATORY', 'PREFLIGHT', 'SKIPPED', 0,
           CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(),
-          'Not a business day; will retry on next scheduled run'
+          'Weekend: aborting to prevent child task execution. Will retry on next weekday (CRON runs 1st-3rd).'
       );
-      RETURN;
+      CALL SYSTEM$ABORT('Not a business day; skipping monthly regulatory pipeline.');
+  END IF;
+
+  -- Check if this month's regulatory run already completed (handles 2nd/3rd day retries)
+  LET v_already_run INTEGER := (
+      SELECT COUNT(*)
+      FROM barclays_dwh.etl_audit_log
+      WHERE pipeline_name = 'MONTHLY_REGULATORY'
+        AND step_name = 'PREFLIGHT'
+        AND status = 'SUCCESS'
+        AND started_at >= DATE_TRUNC('month', CURRENT_DATE())
+  );
+  IF (v_already_run > 0) THEN
+      CALL SYSTEM$ABORT('Monthly regulatory already completed this month; skipping duplicate run.');
   END IF;
 
   INSERT INTO barclays_dwh.etl_audit_log (
@@ -241,9 +256,10 @@ BEGIN
       );
   END IF;
 
+  LET v_rows INTEGER := SQLROWCOUNT;
+
   DROP TABLE IF EXISTS tmp_exposure_trend;
 
-  LET v_rows INTEGER := SQLROWCOUNT;
   INSERT INTO barclays_dwh.etl_audit_log (
       pipeline_name, step_name, status, row_count, started_at, completed_at
   ) VALUES ('MONTHLY_REGULATORY', 'REGULATORY_CAPITAL_CALC', 'SUCCESS', v_rows,
@@ -301,13 +317,29 @@ BEGIN
           WHEN ft.signed_amount > 0 AND ft.transaction_type IN ('INTEREST', 'FEE')
           THEN ft.signed_amount ELSE 0
       END) * 0.60 AS operating_expenses,
-      COALESCE(risk_prov.total_el, 0) AS provision_charges
+      0 AS provision_charges  -- placeholder; allocated proportionally below
   FROM barclays_dwh.fct_transaction ft
   INNER JOIN barclays_dwh.dim_account da
       ON ft.account_sk = da.account_sk
   INNER JOIN barclays_dwh.dim_date dd
       ON ft.date_key = dd.date_key
-  LEFT JOIN (
+  WHERE dd.calendar_date BETWEEN :v_reporting_month AND :v_month_end
+  GROUP BY 1, 2;
+
+  -- Allocate provision charges proportionally by gross_revenue within each business_line
+  -- This avoids the fan-out issue where business-line-level provisions inflate at rollup
+  UPDATE tmp_monthly_detail md
+  SET provision_charges = CASE
+      WHEN bl_totals.bl_gross_revenue > 0
+      THEN COALESCE(risk_prov.total_el, 0) * (md.gross_revenue / bl_totals.bl_gross_revenue)
+      ELSE 0
+  END
+  FROM (
+      SELECT business_line, SUM(gross_revenue) AS bl_gross_revenue
+      FROM tmp_monthly_detail
+      GROUP BY business_line
+  ) bl_totals,
+  (
       SELECT
           CASE da2.account_type
               WHEN 'CURRENT'     THEN 'RETAIL_BANKING'
@@ -324,16 +356,8 @@ BEGIN
       WHERE cr.assessment_date = LAST_DAY(DATE_TRUNC('month', DATEADD('month', -1, CURRENT_DATE())))
       GROUP BY 1
   ) risk_prov
-      ON risk_prov.risk_business_line = CASE da.account_type
-          WHEN 'CURRENT'     THEN 'RETAIL_BANKING'
-          WHEN 'SAVINGS'     THEN 'RETAIL_BANKING'
-          WHEN 'ISA'         THEN 'WEALTH_MANAGEMENT'
-          WHEN 'MORTGAGE'    THEN 'MORTGAGES'
-          WHEN 'CREDIT_CARD' THEN 'CARDS'
-          ELSE 'RETAIL_BANKING'
-      END
-  WHERE dd.calendar_date BETWEEN :v_reporting_month AND :v_month_end
-  GROUP BY 1, 2, risk_prov.total_el;
+  WHERE md.business_line = bl_totals.business_line
+    AND md.business_line = risk_prov.risk_business_line;
 
   -- Delete existing for idempotent re-run
   DELETE FROM barclays_mart.mart_monthly_pnl
@@ -405,9 +429,10 @@ BEGIN
   ) derived
   WHERE tgt.pnl_id = derived.pnl_id;
 
+  LET v_rows INTEGER := SQLROWCOUNT;
+
   DROP TABLE IF EXISTS tmp_monthly_detail;
 
-  LET v_rows INTEGER := SQLROWCOUNT;
   INSERT INTO barclays_dwh.etl_audit_log (
       pipeline_name, step_name, status, row_count, started_at, completed_at
   ) VALUES ('MONTHLY_REGULATORY', 'PNL_ROLLUP', 'SUCCESS', v_rows,
@@ -445,6 +470,9 @@ BEGIN
       '>= 0.115', v_cap_ratio::STRING,
       'Basel III: 8% minimum + 2.5% CCB + 1% G-SIB = 11.5%'
   );
+  IF (v_cap_ratio < 0.115) THEN
+      v_issues := v_issues + 1;
+  END IF;
 
   -- Validation 2: Leverage ratio must exceed 3%
   LET v_lev_ratio DECIMAL(10,6) := (
@@ -459,6 +487,9 @@ BEGIN
       '>= 0.03', v_lev_ratio::STRING,
       'Basel III minimum leverage ratio'
   );
+  IF (v_lev_ratio < 0.03) THEN
+      v_issues := v_issues + 1;
+  END IF;
 
   -- Validation 3: P&L balance check — gross revenue >= operating expenses
   LET v_pnl_balanced BOOLEAN := (
@@ -474,6 +505,9 @@ BEGIN
       'gross_revenue >= operating_expenses', v_pnl_balanced::STRING,
       'Sanity check: revenue should cover expenses at TOTAL level'
   );
+  IF (NOT v_pnl_balanced) THEN
+      v_issues := v_issues + 1;
+  END IF;
 
   -- Validation 4: Cost-to-income ratio sanity check (should be 0-1)
   LET v_cir DECIMAL(10,6) := (
@@ -488,6 +522,9 @@ BEGIN
       '0 <= CIR <= 1', v_cir::STRING,
       'Cost-to-income ratio should be between 0 and 1'
   );
+  IF (v_cir NOT BETWEEN 0 AND 1) THEN
+      v_issues := v_issues + 1;
+  END IF;
 
   INSERT INTO barclays_dwh.etl_audit_log (
       pipeline_name, step_name, status, row_count, started_at, completed_at, details

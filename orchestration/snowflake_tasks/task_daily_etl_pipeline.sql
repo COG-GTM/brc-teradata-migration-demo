@@ -65,6 +65,8 @@ CREATE OR REPLACE ALERT daily_etl_failure_alert
                  '. Check TASK_HISTORY for details.')
       );
 
+ALTER ALERT daily_etl_failure_alert RESUME;
+
 -- =============================================================================
 -- ROOT TASK: Pre-flight data validation
 -- Replaces: BRCL_DAILY_001_PREFLIGHT
