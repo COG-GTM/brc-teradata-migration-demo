@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: fct_daily_transactions
+    description: >
+      Transaction fact table with enriched context from unified cross-platform data.
+      Incremental materialization with clustering by transaction_date.
+      Migrated from: teradata/ddl/04_warehouse_tables.sql (FCT_TRANSACTION)
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: account_id
+        tests: [not_null]
+      - name: transaction_date
+        tests: [not_null]
+
+  - name: dim_accounts
+    description: >
+      Account dimension with current state and derived attributes.
+      Migrated from: teradata/ddl/04_warehouse_tables.sql (DIM_ACCOUNT)
+    columns:
+      - name: account_id
+        tests: [unique, not_null]
+      - name: customer_id
+        tests: [not_null]
+
+  - name: fct_monthly_pnl
+    description: >
+      Monthly P&L rollup with YTD running totals and moving averages.
+      Migrated from: teradata/stored_procedures/sp_monthly_pnl_rollup.sql
+      Teradata CSUM/MAVG OLAP functions replaced with standard window functions.
+    columns:
+      - name: pnl_id
+        tests: [unique, not_null]
+      - name: reporting_month
+        tests: [not_null]
+
+  - name: fct_daily_balances
+    description: >
+      Daily account balance snapshots computed from unified transactions.
+      Migrated from: teradata/stored_procedures/sp_daily_transaction_load.sql
+    columns:
+      - name: balance_id
+        tests: [unique, not_null]
+      - name: account_id
+        tests: [not_null]

@@ -1,0 +1,125 @@
+version: 2
+
+sources:
+  - name: snowflake_raw
+    description: >
+      Raw landing zone tables from the Snowflake platform.
+      Originally loaded via Snowpipe continuous ingestion and COPY INTO batch loads.
+      Source: Snowflake / HEALTHCARE_RAW database
+    database: "{{ env_var('DBT_RAW_DATABASE', 'healthcare_claims_consolidated') }}"
+    schema: "{{ env_var('DBT_SNOWFLAKE_SCHEMA', 'raw_snowflake') }}"
+    loader: snowpipe
+
+    tables:
+      - name: customer
+        description: >
+          Customer master data from Snowflake. Uses VARIANT column for extended attributes.
+          Snowflake stores address as a JSON object in 'address_json' VARIANT column
+          (structural drift vs Teradata individual columns and Databricks flat columns).
+        columns:
+          - name: customer_id
+            tests: [unique, not_null]
+          - name: first_name
+          - name: last_name
+          - name: date_of_birth
+          - name: nationality
+          - name: kyc_status
+          - name: risk_rating
+          - name: onboarding_date
+          - name: customer_segment
+            description: "NOTE: Snowflake uses 'customer_segment' vs Teradata/Databricks 'segment'"
+          - name: email_address
+            description: "NOTE: Snowflake uses 'email_address' vs Teradata 'email'"
+          - name: phone
+            description: "NOTE: Snowflake uses 'phone' vs Teradata 'phone_number'"
+          - name: address_json
+            description: >
+              VARIANT JSON column containing address fields:
+              {address_line_1, address_line_2, city, postcode, country}
+              STRUCTURAL DRIFT: Teradata stores as individual columns, Databricks as flat columns.
+
+      - name: account
+        description: >
+          Account data from Snowflake. Uses Snowflake clustering on (customer_id, account_type).
+          Stores status as enum-like VARCHAR matching Teradata convention.
+        columns:
+          - name: account_id
+            tests: [unique, not_null]
+          - name: customer_id
+            tests: [not_null]
+          - name: account_type
+          - name: ccy
+            description: "NOTE: Snowflake uses 'ccy' vs Teradata 'currency' vs Databricks 'currency_code'"
+          - name: branch_code
+          - name: sort_code
+          - name: account_status
+            description: "NOTE: Snowflake uses 'account_status' vs Teradata 'status'"
+          - name: opened_date
+            description: "NOTE: Snowflake uses 'opened_date' vs Teradata 'open_date'"
+          - name: closed_date
+            description: "NOTE: Snowflake uses 'closed_date' vs Teradata 'close_date'"
+          - name: credit_limit
+          - name: overdraft_limit
+
+      - name: transaction
+        description: >
+          Transaction data from Snowflake. Clustered by (transaction_date, account_id).
+          Uses VARIANT column for extended transaction metadata.
+        columns:
+          - name: txn_id
+            description: "NOTE: Snowflake uses 'txn_id' vs Teradata 'transaction_id'"
+            tests: [unique, not_null]
+          - name: account_id
+            tests: [not_null]
+          - name: txn_date
+            description: "NOTE: Snowflake uses 'txn_date' vs Teradata 'transaction_date'"
+          - name: txn_time
+            description: "NOTE: Snowflake uses 'txn_time' vs Teradata 'transaction_time'"
+          - name: amount
+          - name: ccy
+          - name: txn_type
+            description: "NOTE: Snowflake uses 'txn_type' vs Teradata 'transaction_type'"
+          - name: counterparty_id
+          - name: narrative
+            description: "NOTE: Snowflake uses 'narrative' vs Teradata 'description'"
+          - name: channel
+          - name: ref_number
+            description: "NOTE: Snowflake uses 'ref_number' vs Teradata 'reference_number'"
+          - name: running_balance
+            description: "NOTE: Snowflake uses 'running_balance' vs Teradata 'balance_after'"
+          - name: txn_metadata
+            description: "VARIANT JSON with extended metadata (not present in Teradata/Databricks)"
+
+      - name: market_data
+        description: >
+          Market rates from Snowflake. Standard column naming.
+        columns:
+          - name: instrument_id
+          - name: valuation_date
+          - name: instrument_type
+          - name: instrument_name
+          - name: ccy
+          - name: mid_price
+          - name: bid_price
+          - name: ask_price
+          - name: source_system
+
+      - name: counterparty
+        description: >
+          Counterparty reference from Snowflake. Uses VARIANT for screening_flags.
+        columns:
+          - name: counterparty_id
+            tests: [unique, not_null]
+          - name: name
+            description: "NOTE: Snowflake uses 'name' vs Teradata 'counterparty_name'"
+          - name: entity_type
+            description: "NOTE: Snowflake uses 'entity_type' vs Teradata 'counterparty_type'"
+          - name: country_code
+          - name: lei_code
+          - name: swift_bic
+          - name: risk_rating
+          - name: screening_flags
+            description: >
+              VARIANT JSON: {is_sanctioned: boolean, is_pep: boolean, last_screened: timestamp}
+              STRUCTURAL DRIFT: Teradata stores as individual CHAR(1) columns,
+              Databricks stores as individual boolean columns.

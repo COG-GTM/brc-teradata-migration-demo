@@ -1,0 +1,243 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-02",
+    "project": "healthcare_claims_consolidated",
+    "description": "Cross-platform lineage map showing every object on every legacy platform mapped to its unified equivalent"
+  },
+  "platform_objects": {
+    "teradata": {
+      "raw_tables": {
+        "BARCLAYS_RAW.CUSTOMER": {
+          "type": "SET TABLE",
+          "unified_equivalent": "stg_teradata__customer -> int_unified_customer",
+          "migration_status": "MIGRATED",
+          "notes": "SET table dedup semantics preserved via ROW_NUMBER(). PRIMARY INDEX on customer_id removed (Snowflake micro-partitions). COMPRESS values removed. CHARACTER SET LATIN NOT CASESPECIFIC removed."
+        },
+        "BARCLAYS_RAW.ACCOUNT": {
+          "type": "MULTISET TABLE",
+          "unified_equivalent": "stg_teradata__account -> int_unified_account",
+          "migration_status": "MIGRATED",
+          "notes": "PPI RANGE_N on open_date removed. COMPRESS values removed."
+        },
+        "BARCLAYS_RAW.TRANSACTION": {
+          "type": "MULTISET TABLE",
+          "unified_equivalent": "stg_teradata__transaction -> int_unified_transaction",
+          "migration_status": "MIGRATED",
+          "notes": "PPI RANGE_N monthly partitioning removed. value_band and signed_amount derived in staging."
+        },
+        "BARCLAYS_RAW.MARKET_DATA": {
+          "type": "MULTISET TABLE",
+          "unified_equivalent": "stg_teradata__market_data -> int_unified_market_data",
+          "migration_status": "MIGRATED"
+        },
+        "BARCLAYS_RAW.COUNTERPARTY": {
+          "type": "SET TABLE",
+          "unified_equivalent": "stg_teradata__counterparty -> int_unified_counterparty",
+          "migration_status": "MIGRATED",
+          "notes": "Y/N flags converted to booleans. screening_category derived."
+        }
+      },
+      "staging_views": {
+        "BARCLAYS_STG.V_CUSTOMER_LATEST": {
+          "unified_equivalent": "stg_teradata__customer",
+          "migration_status": "MIGRATED",
+          "notes": "QUALIFY ROW_NUMBER() replaced with subquery. LOCK ROW FOR ACCESS removed."
+        },
+        "BARCLAYS_STG.V_ACCOUNT_CURRENT": {
+          "unified_equivalent": "stg_teradata__account",
+          "migration_status": "MIGRATED",
+          "notes": "ZEROIFNULL replaced with coalesce. derived_status logic preserved."
+        },
+        "BARCLAYS_STG.V_TRANSACTION_ENRICHED": {
+          "unified_equivalent": "stg_teradata__transaction + int_transaction_enriched",
+          "migration_status": "MIGRATED",
+          "notes": "value_band and signed_amount in staging; joins in intermediate."
+        },
+        "BARCLAYS_STG.V_MARKET_DATA_LATEST": {
+          "unified_equivalent": "stg_teradata__market_data",
+          "migration_status": "MIGRATED"
+        },
+        "BARCLAYS_STG.V_COUNTERPARTY_SCREENED": {
+          "unified_equivalent": "stg_teradata__counterparty",
+          "migration_status": "MIGRATED",
+          "notes": "screening_category derivation preserved in staging model."
+        }
+      },
+      "warehouse_tables": {
+        "BARCLAYS_DWH.DIM_CUSTOMER": {
+          "unified_equivalent": "snap_customer_risk_rating (SCD Type 2)",
+          "migration_status": "MIGRATED",
+          "notes": "PERIOD data type replaced with dbt snapshot dbt_valid_from/dbt_valid_to. IDENTITY columns replaced with dbt_utils.generate_surrogate_key."
+        },
+        "BARCLAYS_DWH.DIM_ACCOUNT": {
+          "unified_equivalent": "dim_accounts + snap_account_status",
+          "migration_status": "MIGRATED"
+        },
+        "BARCLAYS_DWH.DIM_DATE": {
+          "unified_equivalent": "dim_date (seed)",
+          "migration_status": "MIGRATED"
+        },
+        "BARCLAYS_DWH.FCT_TRANSACTION": {
+          "unified_equivalent": "fct_daily_transactions",
+          "migration_status": "MIGRATED",
+          "notes": "PPI RANGE_N replaced with Snowflake cluster_by."
+        },
+        "BARCLAYS_DWH.FCT_DAILY_BALANCE": {
+          "unified_equivalent": "fct_daily_balances + int_daily_account_balances",
+          "migration_status": "MIGRATED",
+          "notes": "MERGE INTO replaced with dbt incremental materialization."
+        }
+      },
+      "mart_tables": {
+        "BARCLAYS_MART.MART_CREDIT_RISK": {
+          "unified_equivalent": "fct_credit_risk_scores",
+          "migration_status": "MIGRATED"
+        },
+        "BARCLAYS_MART.MART_REGULATORY_CAPITAL": {
+          "unified_equivalent": "fct_regulatory_capital",
+          "migration_status": "MIGRATED",
+          "notes": "GROUP BY ROLLUP replaced with union all approach."
+        },
+        "BARCLAYS_MART.MART_AML_ALERTS": {
+          "unified_equivalent": "fct_aml_alerts",
+          "migration_status": "MIGRATED"
+        },
+        "BARCLAYS_MART.MART_MONTHLY_PNL": {
+          "unified_equivalent": "fct_monthly_pnl",
+          "migration_status": "MIGRATED",
+          "notes": "CSUM/MAVG OLAP functions replaced with standard window functions."
+        }
+      },
+      "stored_procedures": {
+        "BARCLAYS_DWH.sp_daily_transaction_load": {
+          "unified_equivalent": "stg_teradata__* + int_unified_* + int_transaction_enriched + int_daily_account_balances + fct_daily_transactions + fct_daily_balances + snap_customer_risk_rating + snap_account_status",
+          "migration_status": "MIGRATED",
+          "notes": "243-line procedure decomposed into multiple dbt models. SCD2 cursor loop replaced with dbt snapshot. MERGE INTO replaced with incremental materialization. COLLECT STATISTICS removed."
+        },
+        "BARCLAYS_DWH.sp_customer_risk_scoring": {
+          "unified_equivalent": "int_customer_risk_factors + fct_credit_risk_scores",
+          "migration_status": "MIGRATED",
+          "notes": "208-line procedure decomposed into intermediate risk factors + mart scoring. VOLATILE TABLE replaced with CTE. HASHBUCKET/HASHROW replaced with hash()."
+        },
+        "BARCLAYS_DWH.sp_aml_screening": {
+          "unified_equivalent": "int_aml_screening_flags + fct_aml_alerts",
+          "migration_status": "MIGRATED",
+          "notes": "220-line procedure decomposed into intermediate flags + mart alerts. VOLATILE TABLEs replaced with CTEs. SOUNDEX preserved (native Snowflake). OREPLACE/OTRANSLATE replaced with replace/translate. LIKE ANY replaced with multiple LIKE OR."
+        },
+        "BARCLAYS_DWH.sp_monthly_pnl_rollup": {
+          "unified_equivalent": "fct_monthly_pnl",
+          "migration_status": "MIGRATED",
+          "notes": "207-line procedure converted to single dbt model. GROUP BY ROLLUP logic preserved via union approach. CSUM -> sum() over(). MAVG -> avg() over()."
+        },
+        "BARCLAYS_DWH.sp_regulatory_capital_calc": {
+          "unified_equivalent": "fct_regulatory_capital",
+          "migration_status": "MIGRATED",
+          "notes": "144-line procedure converted to single dbt model. NORMALIZE ON removed. MDIFF replaced with lag()."
+        }
+      },
+      "bteq_scripts": {
+        "daily_batch_load.bteq": {
+          "unified_equivalent": "orchestration/snowflake_tasks/01_daily_batch_pipeline.sql",
+          "migration_status": "MIGRATED",
+          "notes": "88-line BTEQ script replaced with Snowflake Task DAG. .IF ERRORCODE/.GOTO replaced with Task error handling. .LOGON/.LOGOFF removed. Sequential CALL replaced with Task dependencies."
+        },
+        "monthly_regulatory_report.bteq": {
+          "unified_equivalent": "orchestration/snowflake_tasks/02_monthly_regulatory_pipeline.sql",
+          "migration_status": "MIGRATED",
+          "notes": "75-line BTEQ script replaced with Snowflake Task DAG."
+        }
+      }
+    },
+    "databricks": {
+      "delta_tables": {
+        "healthcare_raw.customer": {
+          "unified_equivalent": "stg_databricks__customer -> int_unified_customer",
+          "migration_status": "MIGRATED",
+          "notes": "Delta Z-ORDER removed. address_line1 -> address_line_1 naming resolved."
+        },
+        "healthcare_raw.account": {
+          "unified_equivalent": "stg_databricks__account -> int_unified_account",
+          "migration_status": "MIGRATED",
+          "notes": "is_active boolean converted to status VARCHAR. currency_code -> currency. Delta partition by open_year removed."
+        },
+        "healthcare_raw.transaction": {
+          "unified_equivalent": "stg_databricks__transaction -> int_unified_transaction",
+          "migration_status": "MIGRATED",
+          "notes": "transaction_timestamp split to date+time. amount double -> numeric. Delta partition by transaction_month removed."
+        },
+        "healthcare_raw.market_data": {
+          "unified_equivalent": "stg_databricks__market_data -> int_unified_market_data",
+          "migration_status": "MIGRATED",
+          "notes": "data_source -> source_system naming resolved."
+        },
+        "healthcare_raw.counterparty": {
+          "unified_equivalent": "stg_databricks__counterparty -> int_unified_counterparty",
+          "migration_status": "MIGRATED",
+          "notes": "Boolean flags already in correct format."
+        }
+      },
+      "notebooks": {
+        "PySpark transformation notebooks": {
+          "unified_equivalent": "dbt SQL models (staging + intermediate + marts)",
+          "migration_status": "MIGRATED",
+          "notes": "PySpark DataFrame operations extracted as SQL and rewritten as dbt models."
+        },
+        "Auto Loader ingestion": {
+          "unified_equivalent": "orchestration/snowpipe/raw_data_ingestion.sql",
+          "migration_status": "MIGRATED",
+          "notes": "Databricks Auto Loader (cloudFiles) replaced with Snowpipe AUTO_INGEST."
+        }
+      }
+    },
+    "snowflake": {
+      "raw_tables": {
+        "HEALTHCARE_RAW.customer": {
+          "unified_equivalent": "stg_snowflake__customer -> int_unified_customer",
+          "migration_status": "MIGRATED",
+          "notes": "VARIANT address_json flattened to individual columns. customer_segment -> segment. email_address -> email. phone -> phone_number."
+        },
+        "HEALTHCARE_RAW.account": {
+          "unified_equivalent": "stg_snowflake__account -> int_unified_account",
+          "migration_status": "MIGRATED",
+          "notes": "ccy -> currency. account_status -> status. opened_date -> open_date. closed_date -> close_date."
+        },
+        "HEALTHCARE_RAW.transaction": {
+          "unified_equivalent": "stg_snowflake__transaction -> int_unified_transaction",
+          "migration_status": "MIGRATED",
+          "notes": "txn_id -> transaction_id. txn_date -> transaction_date. txn_type -> transaction_type. narrative -> description. running_balance -> balance_after. ref_number -> reference_number. ccy -> currency. txn_metadata VARIANT ignored (Snowflake-only extension)."
+        },
+        "HEALTHCARE_RAW.market_data": {
+          "unified_equivalent": "stg_snowflake__market_data -> int_unified_market_data",
+          "migration_status": "MIGRATED",
+          "notes": "ccy -> currency."
+        },
+        "HEALTHCARE_RAW.counterparty": {
+          "unified_equivalent": "stg_snowflake__counterparty -> int_unified_counterparty",
+          "migration_status": "MIGRATED",
+          "notes": "name -> counterparty_name. entity_type -> counterparty_type. VARIANT screening_flags JSON flattened to individual boolean columns."
+        }
+      },
+      "stored_procedures": {
+        "Snowflake transformation procedures": {
+          "unified_equivalent": "dbt SQL models",
+          "migration_status": "MIGRATED",
+          "notes": "Transformation logic moved into dbt for version control, testing, and lineage."
+        }
+      },
+      "tasks": {
+        "Existing Snowflake Tasks": {
+          "unified_equivalent": "orchestration/snowflake_tasks/01_daily_batch_pipeline.sql + 02_monthly_regulatory_pipeline.sql",
+          "migration_status": "MIGRATED",
+          "notes": "Consolidated into unified Task DAG with proper dependencies."
+        }
+      },
+      "pipes": {
+        "Existing Snowpipes": {
+          "unified_equivalent": "orchestration/snowpipe/raw_data_ingestion.sql",
+          "migration_status": "MIGRATED",
+          "notes": "Consolidated pipe definitions."
+        }
+      }
+    }
+  }
+}

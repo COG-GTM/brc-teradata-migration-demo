@@ -1,0 +1,114 @@
+version: 2
+
+sources:
+  - name: databricks_raw
+    description: >
+      Raw landing zone tables from the Databricks Delta Lake platform.
+      Originally loaded via Auto Loader / structured streaming into Delta tables.
+      Source: Databricks / healthcare_raw catalog
+    database: "{{ env_var('DBT_RAW_DATABASE', 'healthcare_claims_consolidated') }}"
+    schema: "{{ env_var('DBT_DATABRICKS_SCHEMA', 'raw_databricks') }}"
+    loader: databricks_autoloader
+
+    tables:
+      - name: customer
+        description: >
+          Customer master data from Databricks Delta Lake.
+          Delta format with Z-ORDER optimization on customer_id.
+          Uses snake_case column naming convention (differs from Teradata UPPER_CASE).
+        columns:
+          - name: customer_id
+            tests: [unique, not_null]
+          - name: first_name
+          - name: last_name
+          - name: date_of_birth
+          - name: nationality
+          - name: kyc_status
+          - name: risk_rating
+          - name: onboarding_date
+          - name: segment
+          - name: email
+          - name: phone_number
+          - name: address_line1
+            description: "NOTE: Databricks uses 'address_line1' (no underscore before digit) vs Teradata 'address_line_1'"
+          - name: address_line2
+            description: "NOTE: Databricks uses 'address_line2' vs Teradata 'address_line_2'"
+          - name: city
+          - name: postcode
+          - name: country
+
+      - name: account
+        description: >
+          Account data from Databricks. Delta partitioned by open_year (derived column).
+          Uses is_active boolean instead of Teradata status VARCHAR.
+        columns:
+          - name: account_id
+            tests: [unique, not_null]
+          - name: customer_id
+            tests: [not_null]
+          - name: account_type
+          - name: currency_code
+            description: "NOTE: Databricks uses 'currency_code' vs Teradata 'currency'"
+          - name: branch_code
+          - name: sort_code
+          - name: is_active
+            description: "NOTE: Databricks stores as boolean vs Teradata status VARCHAR(10)"
+          - name: open_date
+          - name: close_date
+          - name: credit_limit
+          - name: overdraft_limit
+
+      - name: transaction
+        description: >
+          Transaction data from Databricks Delta Lake.
+          Delta partitioned by transaction_month (YYYY-MM derived column).
+          Stores amount as double (vs Teradata DECIMAL(15,2)).
+        columns:
+          - name: transaction_id
+            tests: [unique, not_null]
+          - name: account_id
+            tests: [not_null]
+          - name: transaction_date
+          - name: transaction_timestamp
+            description: "NOTE: Databricks uses full timestamp vs Teradata separate date/time columns"
+          - name: amount
+          - name: currency_code
+            description: "NOTE: Databricks uses 'currency_code' vs Teradata 'currency'"
+          - name: transaction_type
+          - name: counterparty_id
+          - name: description
+          - name: channel
+          - name: reference_number
+          - name: balance_after
+
+      - name: market_data
+        description: >
+          Market rates from Databricks. Stored as Delta with MERGE-on-read pattern.
+        columns:
+          - name: instrument_id
+          - name: valuation_date
+          - name: instrument_type
+          - name: instrument_name
+          - name: currency_code
+          - name: mid_price
+          - name: bid_price
+          - name: ask_price
+          - name: data_source
+            description: "NOTE: Databricks uses 'data_source' vs Teradata 'source_system'"
+
+      - name: counterparty
+        description: >
+          Counterparty reference from Databricks. Uses JSON nested struct for flags.
+        columns:
+          - name: counterparty_id
+            tests: [unique, not_null]
+          - name: counterparty_name
+          - name: counterparty_type
+          - name: country_code
+          - name: lei_code
+          - name: swift_bic
+          - name: risk_rating
+          - name: is_sanctioned
+            description: "NOTE: Databricks stores as boolean 'is_sanctioned' vs Teradata CHAR(1) 'sanctions_flag'"
+          - name: is_pep
+            description: "NOTE: Databricks stores as boolean 'is_pep' vs Teradata CHAR(1) 'pep_flag'"

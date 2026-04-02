@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: input_layer__eligibility
+    description: >
+      Tuva-compatible eligibility/enrollment input layer.
+      Maps unified customer + account data to the Tuva eligibility schema.
+      Each customer-account combination represents an enrollment period.
+    columns:
+      - name: member_id
+        tests: [not_null]
+      - name: enrollment_start_date
+        tests: [not_null]
+      - name: data_source
+        tests: [not_null]
+
+  - name: input_layer__medical_claim
+    description: >
+      Tuva-compatible medical claim input layer.
+      Maps unified enriched transactions to the Tuva medical_claim schema.
+      Banking transactions serve as the data substrate for Tuva's
+      claims preprocessing and DQ test framework.
+    columns:
+      - name: claim_id
+        tests: [unique, not_null]
+      - name: member_id
+        tests: [not_null]
+      - name: data_source
+        tests: [not_null]
+
+  - name: input_layer__pharmacy_claim
+    description: >
+      Tuva-compatible pharmacy claim input layer.
+      Maps fee and interest transactions to the Tuva pharmacy_claim schema.
+    columns:
+      - name: claim_id
+        tests: [unique, not_null]
+      - name: member_id
+        tests: [not_null]
+      - name: data_source
+        tests: [not_null]

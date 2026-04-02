@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: fct_credit_risk_scores
+    description: >
+      Credit risk scoring mart with Basel III PD/LGD/EAD/RWA calculations.
+      Migrated from: teradata/stored_procedures/sp_customer_risk_scoring.sql
+      Logic drift resolution: adopted Teradata risk rating priority order.
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+      - name: risk_rating
+        tests:
+          - accepted_values:
+              values: ['A', 'B', 'C', 'D', 'E']
+      - name: probability_of_default
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+
+  - name: fct_regulatory_capital
+    description: >
+      Basel III regulatory capital calculations with asset class rollups.
+      Migrated from: teradata/stored_procedures/sp_regulatory_capital_calc.sql
+      Teradata GROUP BY ROLLUP replaced with union all approach.
+    columns:
+      - name: capital_id
+        tests: [unique, not_null]
+      - name: capital_ratio
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1
+              row_condition: "capital_ratio is not null"
+
+  - name: dim_risk_ratings
+    description: >
+      Risk rating reference dimension mapping codes to descriptions and base PD values.
+    columns:
+      - name: risk_rating
+        tests: [unique, not_null]

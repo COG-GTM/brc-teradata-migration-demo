@@ -1,0 +1,37 @@
+# Healthcare Claims Consolidated - Profile Configuration
+#
+# Copy this file to ~/.dbt/profiles.yml and fill in your credentials.
+# For local development, use DuckDB. For production, use Snowflake.
+
+healthcare_claims_consolidated:
+  target: dev  # default target
+
+  outputs:
+    # Local DuckDB for development (no credentials needed)
+    dev:
+      type: duckdb
+      path: "target/dev.duckdb"
+      threads: 4
+
+    # Snowflake production target
+    snowflake_prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'TRANSFORM') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'HEALTHCARE_DWH') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA', 'PUBLIC') }}"
+      threads: 8
+      query_tag: "dbt_healthcare_consolidated"
+
+    # Databricks target (for migration validation)
+    databricks:
+      type: databricks
+      host: "{{ env_var('DATABRICKS_HOST') }}"
+      http_path: "{{ env_var('DATABRICKS_HTTP_PATH') }}"
+      token: "{{ env_var('DATABRICKS_TOKEN') }}"
+      catalog: "{{ env_var('DATABRICKS_CATALOG', 'healthcare') }}"
+      schema: "{{ env_var('DATABRICKS_SCHEMA', 'consolidated') }}"
+      threads: 4

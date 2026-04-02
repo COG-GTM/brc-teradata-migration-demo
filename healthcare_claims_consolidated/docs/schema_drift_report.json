@@ -1,0 +1,209 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-02",
+    "project": "healthcare_claims_consolidated",
+    "description": "Every column naming, type, and structural difference found across platforms with resolution applied"
+  },
+  "column_naming_drift": [
+    {
+      "table": "customer",
+      "column_teradata": "segment",
+      "column_databricks": "segment",
+      "column_snowflake": "customer_segment",
+      "unified_name": "segment",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'customer_segment' aliased to 'segment' in stg_snowflake__customer."
+    },
+    {
+      "table": "customer",
+      "column_teradata": "email",
+      "column_databricks": "email",
+      "column_snowflake": "email_address",
+      "unified_name": "email",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'email_address' aliased to 'email'."
+    },
+    {
+      "table": "customer",
+      "column_teradata": "phone_number",
+      "column_databricks": "phone_number",
+      "column_snowflake": "phone",
+      "unified_name": "phone_number",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'phone' aliased to 'phone_number'."
+    },
+    {
+      "table": "customer",
+      "column_teradata": "address_line_1",
+      "column_databricks": "address_line1",
+      "column_snowflake": "address_json:address_line_1",
+      "unified_name": "address_line_1",
+      "resolution": "Adopted Teradata convention with underscore. Databricks 'address_line1' aliased. Snowflake VARIANT flattened."
+    },
+    {
+      "table": "account",
+      "column_teradata": "currency",
+      "column_databricks": "currency_code",
+      "column_snowflake": "ccy",
+      "unified_name": "currency",
+      "resolution": "Adopted Teradata convention. All platforms aliased to 'currency'."
+    },
+    {
+      "table": "account",
+      "column_teradata": "status",
+      "column_databricks": "is_active (boolean)",
+      "column_snowflake": "account_status",
+      "unified_name": "status",
+      "resolution": "Adopted Teradata VARCHAR convention. Databricks boolean converted via CASE. Snowflake aliased."
+    },
+    {
+      "table": "account",
+      "column_teradata": "open_date",
+      "column_databricks": "open_date",
+      "column_snowflake": "opened_date",
+      "unified_name": "open_date",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'opened_date' aliased."
+    },
+    {
+      "table": "account",
+      "column_teradata": "close_date",
+      "column_databricks": "close_date",
+      "column_snowflake": "closed_date",
+      "unified_name": "close_date",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'closed_date' aliased."
+    },
+    {
+      "table": "transaction",
+      "column_teradata": "transaction_id",
+      "column_databricks": "transaction_id",
+      "column_snowflake": "txn_id",
+      "unified_name": "transaction_id",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'txn_id' aliased."
+    },
+    {
+      "table": "transaction",
+      "column_teradata": "transaction_date",
+      "column_databricks": "transaction_date",
+      "column_snowflake": "txn_date",
+      "unified_name": "transaction_date",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'txn_date' aliased."
+    },
+    {
+      "table": "transaction",
+      "column_teradata": "transaction_type",
+      "column_databricks": "transaction_type",
+      "column_snowflake": "txn_type",
+      "unified_name": "transaction_type",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'txn_type' aliased."
+    },
+    {
+      "table": "transaction",
+      "column_teradata": "description",
+      "column_databricks": "description",
+      "column_snowflake": "narrative",
+      "unified_name": "description",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'narrative' aliased."
+    },
+    {
+      "table": "transaction",
+      "column_teradata": "reference_number",
+      "column_databricks": "reference_number",
+      "column_snowflake": "ref_number",
+      "unified_name": "reference_number",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'ref_number' aliased."
+    },
+    {
+      "table": "transaction",
+      "column_teradata": "balance_after",
+      "column_databricks": "balance_after",
+      "column_snowflake": "running_balance",
+      "unified_name": "balance_after",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'running_balance' aliased."
+    },
+    {
+      "table": "counterparty",
+      "column_teradata": "counterparty_name",
+      "column_databricks": "counterparty_name",
+      "column_snowflake": "name",
+      "unified_name": "counterparty_name",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'name' aliased."
+    },
+    {
+      "table": "counterparty",
+      "column_teradata": "counterparty_type",
+      "column_databricks": "counterparty_type",
+      "column_snowflake": "entity_type",
+      "unified_name": "counterparty_type",
+      "resolution": "Adopted Teradata/Databricks convention. Snowflake 'entity_type' aliased."
+    },
+    {
+      "table": "market_data",
+      "column_teradata": "source_system",
+      "column_databricks": "data_source",
+      "column_snowflake": "source_system",
+      "unified_name": "source_system",
+      "resolution": "Adopted Teradata/Snowflake convention. Databricks 'data_source' aliased."
+    }
+  ],
+  "data_type_drift": [
+    {
+      "table": "account",
+      "column": "status / is_active",
+      "teradata_type": "VARCHAR(10)",
+      "databricks_type": "BOOLEAN",
+      "snowflake_type": "VARCHAR(20)",
+      "unified_type": "VARCHAR",
+      "resolution": "Databricks boolean converted to VARCHAR via CASE expression in staging model."
+    },
+    {
+      "table": "transaction",
+      "column": "amount",
+      "teradata_type": "DECIMAL(15,2)",
+      "databricks_type": "DOUBLE",
+      "snowflake_type": "NUMBER(15,2)",
+      "unified_type": "NUMERIC(15,2)",
+      "resolution": "Databricks DOUBLE cast to NUMERIC(15,2) for precision consistency."
+    },
+    {
+      "table": "counterparty",
+      "column": "sanctions_flag / is_sanctioned / screening_flags",
+      "teradata_type": "CHAR(1) Y/N",
+      "databricks_type": "BOOLEAN",
+      "snowflake_type": "VARIANT JSON",
+      "unified_type": "BOOLEAN",
+      "resolution": "Teradata Y/N converted via CASE. Snowflake VARIANT JSON path extracted. All standardized to boolean."
+    },
+    {
+      "table": "transaction",
+      "column": "transaction_time / transaction_timestamp",
+      "teradata_type": "TIME(6) separate column",
+      "databricks_type": "TIMESTAMP (combined date+time)",
+      "snowflake_type": "TIME separate column",
+      "unified_type": "TIME",
+      "resolution": "Databricks timestamp split; time component extracted via CAST."
+    }
+  ],
+  "structural_drift": [
+    {
+      "table": "customer",
+      "description": "Address storage structure",
+      "teradata": "Individual columns: address_line_1, address_line_2, city, postcode, country",
+      "databricks": "Individual columns: address_line1, address_line2, city, postcode, country",
+      "snowflake": "VARIANT JSON column: address_json containing nested fields",
+      "resolution": "Snowflake VARIANT flattened to individual columns using JSON path notation (address_json:field::varchar). All platforms now produce identical flat column structure."
+    },
+    {
+      "table": "counterparty",
+      "description": "Screening flags storage",
+      "teradata": "Individual CHAR(1) columns: sanctions_flag, pep_flag",
+      "databricks": "Individual boolean columns: is_sanctioned, is_pep",
+      "snowflake": "VARIANT JSON column: screening_flags containing {is_sanctioned, is_pep, last_screened}",
+      "resolution": "Snowflake VARIANT flattened. Teradata CHAR(1) converted. All standardized to individual boolean columns: is_sanctions_listed, is_pep."
+    },
+    {
+      "table": "transaction",
+      "description": "Extended metadata",
+      "teradata": "No extended metadata column",
+      "databricks": "No extended metadata column",
+      "snowflake": "VARIANT txn_metadata column with additional fields",
+      "resolution": "Snowflake txn_metadata VARIANT column ignored in unified model (Snowflake-only extension, no equivalent in other platforms)."
+    }
+  ]
+}
