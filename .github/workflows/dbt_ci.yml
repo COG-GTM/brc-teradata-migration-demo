@@ -32,7 +32,7 @@ jobs:
 
     env:
       DBT_RAW_DATABASE: barclays_migration
-      DBT_RAW_SCHEMA: public_raw
+      DBT_RAW_SCHEMA: raw
 
     steps:
       - name: Checkout repository
@@ -69,7 +69,7 @@ jobs:
 
       - name: Create raw schema
         run: |
-          PGPASSWORD=dbt_password psql -h localhost -U dbt_user -d barclays_migration -c "CREATE SCHEMA IF NOT EXISTS public_raw;"
+          PGPASSWORD=dbt_password psql -h localhost -U dbt_user -d barclays_migration -c "CREATE SCHEMA IF NOT EXISTS raw;"
 
       - name: Install dbt packages
         working-directory: ./dbt_project
@@ -82,6 +82,10 @@ jobs:
       - name: Run dbt models
         working-directory: ./dbt_project
         run: dbt run
+
+      - name: Run dbt snapshots
+        working-directory: ./dbt_project
+        run: dbt snapshot
 
       - name: Run dbt tests
         working-directory: ./dbt_project
