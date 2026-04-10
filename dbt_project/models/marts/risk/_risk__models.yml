@@ -55,6 +55,11 @@ models:
         tests:
           - unique
           - not_null
+      - name: asset_class
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['RETAIL', 'WEALTH', 'CORPORATE', 'ALL_CLASSES']
       - name: rollup_level
         tests:
           - not_null

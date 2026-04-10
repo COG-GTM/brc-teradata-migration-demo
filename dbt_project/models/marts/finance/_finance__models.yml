@@ -17,6 +17,12 @@ models:
           - relationships:
               to: ref('dim_accounts')
               field: account_id
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_customers')
+              field: customer_id
       - name: transaction_date
         tests:
           - not_null
@@ -39,7 +45,7 @@ models:
     description: >
       Monthly profit and loss aggregation by business line and product type.
       Migrated from: teradata/stored_procedures/sp_monthly_pnl_rollup.sql.
-      Replaces Teradata GROUP BY ROLLUP and CSUM/MAVG OLAP functions.
+      Replaces Teradata GROUP BY ROLLUP, GROUPING(), CSUM, and MAVG.
     columns:
       - name: pnl_id
         tests:
@@ -48,11 +54,16 @@ models:
       - name: reporting_month
         tests:
           - not_null
+      - name: rollup_level
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['DETAIL', 'BUSINESS_LINE', 'TOTAL']
       - name: business_line
         tests:
           - not_null
           - accepted_values:
-              values: ['RETAIL_BANKING', 'LENDING', 'CARDS', 'OTHER']
+              values: ['RETAIL_BANKING', 'LENDING', 'CARDS', 'OTHER', 'ALL_LINES']
       - name: gross_revenue
         tests:
           - not_null
@@ -74,7 +85,7 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('stg_customers')
+              to: ref('dim_customers')
               field: customer_id
       - name: account_type
         tests:
@@ -84,3 +95,52 @@ models:
         tests:
           - accepted_values:
               values: ['NEW', 'ESTABLISHED', 'MATURE']
+
+  - name: dim_customers
+    description: >
+      Customer dimension with current state and derived attributes.
+      Migrated from: teradata/ddl/04_warehouse_tables.sql (DIM_CUSTOMER).
+      Replaces Teradata GENERATED ALWAYS AS IDENTITY and PERIOD(DATE).
+    columns:
+      - name: customer_sk
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+      - name: kyc_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['VERIFIED', 'PENDING', 'EXPIRED', 'FAILED']
+      - name: segment
+        tests:
+          - accepted_values:
+              values: ['RETAIL', 'WEALTH', 'CORPORATE']
+      - name: lifecycle_band
+        tests:
+          - accepted_values:
+              values: ['NEW', 'ESTABLISHED', 'LOYAL']
+
+  - name: fct_daily_balances
+    description: >
+      Daily account balance snapshots with prior-day comparison.
+      Migrated from: teradata/ddl/04_warehouse_tables.sql (FCT_DAILY_BALANCE)
+      and teradata/macros/macro_account_balance_snapshot.sql.
+      Replaces Teradata MERGE INTO with dbt incremental materialization.
+    columns:
+      - name: balance_sk
+        tests:
+          - unique
+          - not_null
+      - name: account_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_accounts')
+              field: account_id
+      - name: balance_date
+        tests:
+          - not_null

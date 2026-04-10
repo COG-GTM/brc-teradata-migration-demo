@@ -23,6 +23,10 @@ models:
       - name: total_credits
         tests:
           - not_null
+      - name: transaction_count
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
 
   - name: int_customer_risk_factors
     description: >

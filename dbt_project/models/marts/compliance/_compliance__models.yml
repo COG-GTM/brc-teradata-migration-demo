@@ -14,6 +14,9 @@ models:
       - name: customer_id
         tests:
           - not_null
+          - relationships:
+              to: ref('dim_customers')
+              field: customer_id
       - name: alert_type
         tests:
           - not_null
@@ -38,6 +41,9 @@ models:
         tests:
           - unique
           - not_null
+          - relationships:
+              to: ref('dim_customers')
+              field: customer_id
       - name: kyc_status
         tests:
           - not_null
