@@ -1,0 +1,171 @@
+/*******************************************************************************
+ * monthly_enrollment_refresh.bteq
+ *
+ * Monthly enrollment processing script for healthcare claims.
+ * Runs on the 1st business day of each month to process the prior month.
+ *
+ * Steps:
+ *   1. Pre-flight checks
+ *   2. Member dimension SCD Type 2 updates
+ *   3. Member-month enrollment calculation
+ *   4. PHI masking view refresh
+ *   5. Post-load validation
+ *
+ * Scheduled: 1st business day of month at 07:00 EST via UC4/AutoSys
+ * Dependencies: All daily ETL jobs for prior month must be complete
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/claims_etl,${ETL_PASSWORD};
+
+DATABASE CLAIMS_DWH;
+
+.SET WIDTH 200
+.SET ERRORLEVEL 3807 SEVERITY 0
+.SET ERRORLEVEL 3803 SEVERITY 0
+
+/*---------------------------------------------------------------------------
+ * Calculate prior month boundaries
+ *---------------------------------------------------------------------------*/
+SELECT 'Monthly Enrollment Refresh started at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+/*---------------------------------------------------------------------------
+ * STEP 1: Pre-flight - verify prior month data completeness
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 1: Pre-flight checks';
+
+SELECT
+    'Prior month medical claims: ' || CAST(COUNT(*) AS VARCHAR(20))
+FROM CLAIMS_DWH.FCT_MEDICAL_CLAIM
+WHERE service_date_from_key BETWEEN
+    CAST(CAST(ADD_MONTHS(CURRENT_DATE, -1) - (EXTRACT(DAY FROM ADD_MONTHS(CURRENT_DATE, -1)) - 1) AS FORMAT 'YYYYMMDD') AS INTEGER)
+    AND
+    CAST(CAST(CURRENT_DATE - EXTRACT(DAY FROM CURRENT_DATE) AS FORMAT 'YYYYMMDD') AS INTEGER);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+SELECT
+    'Prior month eligibility records: ' || CAST(COUNT(*) AS VARCHAR(20))
+FROM CLAIMS_RAW.RAW_MEMBER_ELIGIBILITY
+WHERE enrollment_start_date <= CURRENT_DATE - EXTRACT(DAY FROM CURRENT_DATE)
+  AND (enrollment_end_date IS NULL
+       OR enrollment_end_date >= ADD_MONTHS(CURRENT_DATE, -1) - (EXTRACT(DAY FROM ADD_MONTHS(CURRENT_DATE, -1)) - 1));
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+/*---------------------------------------------------------------------------
+ * STEP 2: Member dimension SCD Type 2 updates
+ * Detect and process changes in member demographics
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 2: Member dimension SCD2 update started';
+
+/* Close current records that have changed */
+UPDATE CLAIMS_DWH.DIM_MEMBER
+SET is_current    = 'N',
+    effective_to  = CURRENT_DATE - 1,
+    etl_batch_id  = CAST(CAST(CURRENT_DATE AS FORMAT 'YYYYMMDD') || '050' AS BIGINT),
+    etl_loaded_ts = CURRENT_TIMESTAMP(6)
+WHERE is_current = 'Y'
+  AND member_id IN (
+    SELECT src.member_id
+    FROM CLAIMS_STG.V_MEMBER_LATEST src
+    INNER JOIN CLAIMS_DWH.DIM_MEMBER tgt
+        ON src.member_id = tgt.member_id AND tgt.is_current = 'Y'
+    WHERE src.plan_id           <> tgt.plan_id
+       OR src.line_of_business  <> tgt.line_of_business
+       OR src.state             <> tgt.state
+       OR src.zip_code          <> tgt.zip_code
+       OR src.payer_id          <> tgt.payer_id
+);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'SCD2 closed records: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/* Insert new versions for changed members */
+INSERT INTO CLAIMS_DWH.DIM_MEMBER (
+    member_id, plan_id, payer_id, gender, date_of_birth, race,
+    zip_code, state, relation_to_subscriber, subscriber_id,
+    group_id, line_of_business, age_band,
+    validity_period, is_current, effective_from, effective_to,
+    etl_batch_id, etl_loaded_ts
+)
+SELECT
+    src.member_id, src.plan_id, src.payer_id, src.gender,
+    src.date_of_birth, src.race, src.zip_code, src.state,
+    src.relation_to_subscriber, src.subscriber_id,
+    src.group_id, src.line_of_business,
+    CASE
+        WHEN (CURRENT_DATE - src.date_of_birth) / 365 < 18  THEN '0-17'
+        WHEN (CURRENT_DATE - src.date_of_birth) / 365 < 26  THEN '18-25'
+        WHEN (CURRENT_DATE - src.date_of_birth) / 365 < 35  THEN '26-34'
+        WHEN (CURRENT_DATE - src.date_of_birth) / 365 < 45  THEN '35-44'
+        WHEN (CURRENT_DATE - src.date_of_birth) / 365 < 55  THEN '45-54'
+        WHEN (CURRENT_DATE - src.date_of_birth) / 365 < 65  THEN '55-64'
+        ELSE '65+'
+    END,
+    PERIOD(CURRENT_DATE, DATE '9999-12-31'),
+    'Y', CURRENT_DATE, DATE '9999-12-31',
+    CAST(CAST(CURRENT_DATE AS FORMAT 'YYYYMMDD') || '050' AS BIGINT),
+    CURRENT_TIMESTAMP(6)
+FROM CLAIMS_STG.V_MEMBER_LATEST src
+LEFT JOIN CLAIMS_DWH.DIM_MEMBER tgt
+    ON src.member_id = tgt.member_id AND tgt.is_current = 'Y'
+WHERE tgt.member_sk IS NULL;
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'SCD2 new/changed records inserted: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/*---------------------------------------------------------------------------
+ * STEP 3: Member-month enrollment calculation for prior month
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 3: sp_member_month_enrollment started';
+CALL CLAIMS_MART.sp_member_month_enrollment(
+    EXTRACT(YEAR FROM ADD_MONTHS(CURRENT_DATE, -1)),
+    EXTRACT(MONTH FROM ADD_MONTHS(CURRENT_DATE, -1))
+);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 3 complete. Member months calculated: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/*---------------------------------------------------------------------------
+ * STEP 4: Refresh PHI masking views
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 4: sp_phi_masking started';
+CALL CLAIMS_DWH.sp_phi_masking();
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 4 complete. PHI masking views refreshed.';
+
+/*---------------------------------------------------------------------------
+ * STEP 5: Collect statistics on updated tables
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 5: Collecting statistics';
+COLLECT STATISTICS ON CLAIMS_DWH.DIM_MEMBER      COLUMN (member_id);
+COLLECT STATISTICS ON CLAIMS_DWH.DIM_MEMBER      COLUMN (is_current);
+COLLECT STATISTICS ON CLAIMS_MART.MART_MEMBER_MONTHS COLUMN (year_month);
+COLLECT STATISTICS ON CLAIMS_MART.MART_MEMBER_MONTHS COLUMN (member_id, year_month);
+
+/*---------------------------------------------------------------------------
+ * Post-load validation
+ *---------------------------------------------------------------------------*/
+SELECT 'Validation: Monthly enrollment summary';
+
+SELECT
+    line_of_business,
+    COUNT(*) AS member_month_count,
+    SUM(total_paid_amount) AS total_paid
+FROM CLAIMS_MART.MART_MEMBER_MONTHS
+WHERE year_month = CAST(
+    CAST(EXTRACT(YEAR FROM ADD_MONTHS(CURRENT_DATE, -1)) AS CHAR(4))
+    || CAST(EXTRACT(MONTH FROM ADD_MONTHS(CURRENT_DATE, -1)) AS FORMAT '99')
+    AS INTEGER)
+GROUP BY line_of_business;
+
+SELECT 'Monthly Enrollment Refresh completed successfully at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.GOTO FINISH
+
+/*---------------------------------------------------------------------------
+ * Error handler
+ *---------------------------------------------------------------------------*/
+.LABEL ERRORHANDLER
+SELECT 'ERROR: Monthly Enrollment Refresh failed at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+SELECT 'Last ERRORCODE: ' || CAST(ERRORCODE AS VARCHAR(10));
+.QUIT 12
+
+.LABEL FINISH
+.LOGOFF;
+.QUIT 0;
