@@ -3,9 +3,9 @@
 -- Replaces Teradata post-load validation query from daily_batch_load.bteq.
 
 select
-    account_id,
-    balance_date,
-    closing_balance
+    b.account_id,
+    b.balance_date,
+    b.closing_balance
 
 from {{ ref('int_daily_account_balances') }} b
 inner join {{ ref('stg_accounts') }} a
