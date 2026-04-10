@@ -177,20 +177,12 @@ def create_masked_member_staging():
         .drop("rn")
         .withColumn("effective_date", col("coverage_start_date"))
         .withColumn("staging_timestamp", current_timestamp())
-        # Drop columns not in staging table
+        # Drop columns not in staging table (keep subscriber_id and relationship_code - they're not PHI)
         .drop("source_file_name", "ingestion_timestamp", "record_hash",
-               "pcp_provider_name", "subscriber_id", "relationship_code")
+               "pcp_provider_name")
     )
 
-    # Re-add subscriber_id and relationship_code (they're not PHI)
-    df_final = (
-        df_raw
-        .select("member_id", "subscriber_id", "relationship_code")
-        .dropDuplicates(["member_id"])
-        .join(df_latest, on="member_id", how="inner")
-    )
-
-    return df_final
+    return df_latest
 
 # COMMAND ----------
 

@@ -100,62 +100,96 @@ BEGIN
                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             )                                           AS encounter_group_id
         FROM island_starts
+    ),
+    -- Pick first-claim attributes per encounter using ROW_NUMBER
+    first_claim_attrs AS (
+        SELECT
+            member_id,
+            encounter_group_id,
+            rendering_provider_id,
+            facility_id,
+            primary_diagnosis_code,
+            place_of_service,
+            ROW_NUMBER() OVER (
+                PARTITION BY member_id, encounter_group_id
+                ORDER BY start_date, claim_id
+            )                                           AS rn
+        FROM island_groups
+    ),
+    encounter_first AS (
+        SELECT member_id, encounter_group_id,
+               rendering_provider_id, facility_id,
+               primary_diagnosis_code, place_of_service
+        FROM first_claim_attrs
+        WHERE rn = 1
+    ),
+    -- Aggregate claims into encounters (GROUP BY only member + encounter group)
+    encounter_agg AS (
+        SELECT
+            member_id,
+            encounter_group_id,
+            member_id || '-' || TO_CHAR(MIN(start_date), 'YYYYMMDD') || '-' ||
+                LPAD(encounter_group_id::VARCHAR, 4, '0')   AS encounter_id,
+            MIN(start_date)                                 AS encounter_start_date,
+            MAX(end_date)                                   AS encounter_end_date,
+            -- Determine encounter type from place of service and claim type
+            CASE
+                WHEN MAX(CASE WHEN claim_type = 'I' AND place_of_service = '21' THEN 1 ELSE 0 END) = 1
+                    THEN 'INPATIENT'
+                WHEN MAX(CASE WHEN place_of_service = '23' THEN 1 ELSE 0 END) = 1
+                    THEN 'ED'
+                WHEN MAX(CASE WHEN claim_type = 'I' THEN 1 ELSE 0 END) = 1
+                    THEN 'OUTPATIENT'
+                WHEN MAX(CASE WHEN place_of_service = '02' THEN 1 ELSE 0 END) = 1
+                    THEN 'TELEHEALTH'
+                ELSE 'OFFICE_VISIT'
+            END                                             AS encounter_type,
+            -- DRG from institutional claims
+            MAX(drg_code)                                   AS drg_code,
+            -- Aggregate diagnosis codes into a VARIANT array
+            ARRAY_AGG(DISTINCT primary_diagnosis_code)
+                WITHIN GROUP (ORDER BY primary_diagnosis_code)
+                                                            AS diagnosis_codes,
+            -- Measures
+            COUNT(DISTINCT claim_id)                        AS total_claim_lines,
+            SUM(COALESCE(billed_amount, 0))                 AS total_billed_amount,
+            SUM(COALESCE(allowed_amount, 0))                AS total_allowed_amount,
+            SUM(COALESCE(paid_amount, 0))                   AS total_paid_amount,
+            SUM(COALESCE(net_paid_amount, 0))               AS total_net_paid_amount,
+            SUM(COALESCE(copay_amount, 0))
+                + SUM(COALESCE(coinsurance_amount, 0))
+                + SUM(COALESCE(deductible_amount, 0))       AS total_member_liability,
+            DATEDIFF('day', MIN(start_date), MAX(end_date)) AS length_of_stay,
+            MAX(source_system)                              AS source_system
+        FROM island_groups
+        GROUP BY member_id, encounter_group_id
     )
-    -- Aggregate claims into encounters
+    -- Join aggregated metrics with first-claim attributes
     SELECT
-        member_id || '-' || TO_CHAR(MIN(start_date), 'YYYYMMDD') || '-' ||
-            LPAD(encounter_group_id::VARCHAR, 4, '0')   AS encounter_id,
-        member_id,
-        MIN(start_date)                                 AS encounter_start_date,
-        MAX(end_date)                                   AS encounter_end_date,
-        -- Use the provider from the first claim line
-        FIRST_VALUE(rendering_provider_id) OVER (
-            PARTITION BY member_id, encounter_group_id
-            ORDER BY start_date
-        )                                               AS rendering_provider_id,
-        FIRST_VALUE(facility_id) OVER (
-            PARTITION BY member_id, encounter_group_id
-            ORDER BY start_date
-        )                                               AS facility_id,
-        -- Determine encounter type from place of service and claim type
-        CASE
-            WHEN MAX(CASE WHEN claim_type = 'I' AND place_of_service = '21' THEN 1 ELSE 0 END) = 1
-                THEN 'INPATIENT'
-            WHEN MAX(CASE WHEN place_of_service = '23' THEN 1 ELSE 0 END) = 1
-                THEN 'ED'
-            WHEN MAX(CASE WHEN claim_type = 'I' THEN 1 ELSE 0 END) = 1
-                THEN 'OUTPATIENT'
-            WHEN MAX(CASE WHEN place_of_service = '02' THEN 1 ELSE 0 END) = 1
-                THEN 'TELEHEALTH'
-            ELSE 'OFFICE_VISIT'
-        END                                             AS encounter_type,
-        -- DRG from institutional claims
-        MAX(drg_code)                                   AS drg_code,
-        -- Primary diagnosis from the first claim
-        FIRST_VALUE(primary_diagnosis_code) OVER (
-            PARTITION BY member_id, encounter_group_id
-            ORDER BY start_date
-        )                                               AS primary_diagnosis_code,
-        -- Aggregate diagnosis codes into a VARIANT array
-        ARRAY_AGG(DISTINCT primary_diagnosis_code)
-            WITHIN GROUP (ORDER BY primary_diagnosis_code)
-                                                        AS diagnosis_codes,
-        place_of_service,
-        -- Measures
-        COUNT(DISTINCT claim_id)                        AS total_claim_lines,
-        SUM(COALESCE(billed_amount, 0))                 AS total_billed_amount,
-        SUM(COALESCE(allowed_amount, 0))                AS total_allowed_amount,
-        SUM(COALESCE(paid_amount, 0))                   AS total_paid_amount,
-        SUM(COALESCE(net_paid_amount, 0))               AS total_net_paid_amount,
-        SUM(COALESCE(copay_amount, 0))
-            + SUM(COALESCE(coinsurance_amount, 0))
-            + SUM(COALESCE(deductible_amount, 0))       AS total_member_liability,
-        DATEDIFF('day', MIN(start_date), MAX(end_date)) AS length_of_stay,
-        MAX(source_system)                              AS source_system,
-        encounter_group_id
-    FROM island_groups
-    GROUP BY member_id, encounter_group_id, place_of_service,
-             rendering_provider_id, facility_id, primary_diagnosis_code;
+        a.encounter_id,
+        a.member_id,
+        a.encounter_start_date,
+        a.encounter_end_date,
+        f.rendering_provider_id,
+        f.facility_id,
+        a.encounter_type,
+        a.drg_code,
+        f.primary_diagnosis_code,
+        a.diagnosis_codes,
+        f.place_of_service,
+        a.total_claim_lines,
+        a.total_billed_amount,
+        a.total_allowed_amount,
+        a.total_paid_amount,
+        a.total_net_paid_amount,
+        a.total_member_liability,
+        a.length_of_stay,
+        a.source_system,
+        a.encounter_group_id
+    FROM encounter_agg a
+    INNER JOIN encounter_first f
+        ON a.member_id = f.member_id
+       AND a.encounter_group_id = f.encounter_group_id;
 
     -- =========================================================================
     -- Step 2: Merge encounters into the fact table

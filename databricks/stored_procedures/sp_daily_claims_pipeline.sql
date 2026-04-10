@@ -89,9 +89,13 @@ BEGIN
                     CASE UPPER(TRIM(claim_status))
                         WHEN 'PAID' THEN 1
                         WHEN 'APPROVED' THEN 1
+                        WHEN 'FINALIZED' THEN 1
                         WHEN 'ADJUSTED' THEN 2
+                        WHEN 'CORRECTED' THEN 2
                         WHEN 'DENIED' THEN 3
+                        WHEN 'REJECTED' THEN 3
                         WHEN 'REVERSED' THEN 4
+                        WHEN 'VOIDED' THEN 4
                         ELSE 99
                     END ASC,
                     COALESCE(adjustment_sequence_number, 0) DESC,
