@@ -6,6 +6,7 @@
 
 {% macro hash_to_int_bucket(hash_expr, num_buckets) %}
 
+    {# Use target.type for SQL dialect since it determines which SQL the database understands #}
     {% if target.type == 'snowflake' %}
         mod(abs(to_number(substring({{ hash_expr }}, 1, 8), 'XXXXXXXX')), {{ num_buckets }})
     {% elif target.type == 'databricks' %}
