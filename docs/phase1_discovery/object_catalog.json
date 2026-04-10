@@ -1,0 +1,212 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-10",
+    "description": "Phase 1: Cross-platform object catalog for healthcare claims data warehouse migration",
+    "platforms": ["teradata", "databricks", "snowflake"]
+  },
+  "teradata": {
+    "platform": "Teradata",
+    "base_path": "teradata/claims/",
+    "databases": [
+      {"name": "CLAIMS_RAW", "type": "database", "purpose": "Raw landing zone"},
+      {"name": "CLAIMS_STG", "type": "database", "purpose": "Staging layer"},
+      {"name": "CLAIMS_DWH", "type": "database", "purpose": "Data warehouse"},
+      {"name": "CLAIMS_MART", "type": "database", "purpose": "Reporting marts"}
+    ],
+    "tables": [
+      {"name": "RAW_MEMBER_ELIGIBILITY", "schema": "CLAIMS_RAW", "type": "SET TABLE", "purpose": "Member enrollment/eligibility", "partition": "RANGE_N yearly on enrollment_start_date", "primary_index": "member_id"},
+      {"name": "RAW_MEDICAL_CLAIM", "schema": "CLAIMS_RAW", "type": "MULTISET TABLE", "purpose": "Medical claims (I/P/O)", "partition": "RANGE_N monthly on service_date_from", "primary_index": "(claim_id, claim_line_number)"},
+      {"name": "RAW_PHARMACY_CLAIM", "schema": "CLAIMS_RAW", "type": "MULTISET TABLE", "purpose": "Pharmacy claims from PBM", "partition": "RANGE_N monthly on dispensing_date", "primary_index": "claim_id"},
+      {"name": "DIM_MEMBER", "schema": "CLAIMS_DWH", "type": "MULTISET TABLE", "purpose": "SCD Type 2 member dimension", "features": ["PERIOD data type", "GENERATED ALWAYS AS IDENTITY"]},
+      {"name": "DIM_PROVIDER", "schema": "CLAIMS_DWH", "type": "MULTISET TABLE", "purpose": "Provider dimension"},
+      {"name": "DIM_DATE", "schema": "CLAIMS_DWH", "type": "SET TABLE", "purpose": "Calendar dimension"},
+      {"name": "FCT_MEDICAL_CLAIM", "schema": "CLAIMS_DWH", "type": "MULTISET TABLE", "purpose": "Medical claim facts"},
+      {"name": "FCT_PHARMACY_CLAIM", "schema": "CLAIMS_DWH", "type": "MULTISET TABLE", "purpose": "Pharmacy claim facts"},
+      {"name": "FCT_ENCOUNTER", "schema": "CLAIMS_DWH", "type": "MULTISET TABLE", "purpose": "Encounter groupings"},
+      {"name": "MART_MEMBER_MONTHS", "schema": "CLAIMS_MART", "type": "MULTISET TABLE", "purpose": "Member month enrollment summary"},
+      {"name": "MART_CLAIM_SUMMARY", "schema": "CLAIMS_MART", "type": "MULTISET TABLE", "purpose": "Claims aggregation by type/month"},
+      {"name": "MART_ENCOUNTER_SUMMARY", "schema": "CLAIMS_MART", "type": "MULTISET TABLE", "purpose": "Encounter-level aggregation"},
+      {"name": "MART_QUALITY_MEASURES", "schema": "CLAIMS_MART", "type": "MULTISET TABLE", "purpose": "HEDIS quality measures"}
+    ],
+    "views": [
+      {"name": "V_MEMBER_LATEST", "schema": "CLAIMS_STG", "purpose": "Deduplicated member eligibility", "features": ["QUALIFY ROW_NUMBER()", "LOCK ROW FOR ACCESS"]},
+      {"name": "V_MEDICAL_CLAIM_CURRENT", "schema": "CLAIMS_STG", "purpose": "ADR-deduped medical claims", "adr_priority": "PAID=1, ADJUSTED=2, DENIED=3, REVERSED=4"},
+      {"name": "V_PHARMACY_CLAIM_CURRENT", "schema": "CLAIMS_STG", "purpose": "ADR-deduped pharmacy claims", "adr_priority": "PAID=1, ADJUSTED=2, DENIED=3, REVERSED=4"}
+    ],
+    "stored_procedures": [
+      {"name": "sp_claims_adr_dedup", "schema": "CLAIMS_DWH", "purpose": "ADR deduplication for medical claims", "adr_priority": "PAID=1, DENIED=2, ADJUSTED=3, REVERSED=4", "note": "INTENTIONAL BUG: DENIED before ADJUSTED"},
+      {"name": "sp_encounter_grouping", "schema": "CLAIMS_DWH", "purpose": "Encounter grouping", "algorithm": "NAIVE GROUP BY (not true overlap detection)", "note": "INTENTIONAL DRIFT: misses overlapping date ranges"},
+      {"name": "sp_diagnosis_code_flatten", "schema": "CLAIMS_DWH", "purpose": "Flatten 25 individual diagnosis code columns into rows"},
+      {"name": "sp_phi_masking", "schema": "CLAIMS_DWH", "purpose": "PHI masking via query-time views", "masking_stage": "AFTER marts (query-time)", "note": "DRIFT: unmasked PHI persists in DWH tables"},
+      {"name": "sp_member_month_enrollment", "schema": "CLAIMS_DWH", "purpose": "Monthly enrollment calculation using EXPAND ON"}
+    ],
+    "bteq_scripts": [
+      {"name": "daily_claims_load.bteq", "purpose": "Daily batch claims load with .LOGON, .IF ERRORCODE, .GOTO, .IMPORT"},
+      {"name": "monthly_enrollment_refresh.bteq", "purpose": "Monthly enrollment processing"},
+      {"name": "quarterly_quality_measures.bteq", "purpose": "Quarterly HEDIS quality measure calculation"}
+    ],
+    "other_artifacts": [
+      {"name": "claims_file_load.fl", "type": "FastLoad", "purpose": "Flat file claims import"},
+      {"name": "claims_export.tpt", "type": "TPT", "purpose": "TPT export script"},
+      {"name": "daily_claims_sequence.txt", "type": "Scheduled Job", "purpose": "Daily job sequence"},
+      {"name": "monthly_enrollment_sequence.txt", "type": "Scheduled Job", "purpose": "Monthly job sequence"}
+    ]
+  },
+  "databricks": {
+    "platform": "Databricks (Delta Lake)",
+    "base_path": "databricks/",
+    "schemas": [
+      {"name": "claims_raw", "purpose": "Raw landing zone (bronze)"},
+      {"name": "claims_staging", "purpose": "Staging layer (silver)"},
+      {"name": "claims_warehouse", "purpose": "Data warehouse (gold)"},
+      {"name": "claims_mart", "purpose": "Reporting marts (gold)"}
+    ],
+    "tables": [
+      {"name": "raw_member_eligibility", "schema": "claims_raw", "type": "Delta table", "purpose": "Member enrollment/eligibility", "quality": "bronze"},
+      {"name": "raw_medical_claim", "schema": "claims_raw", "type": "Delta table", "purpose": "Medical claims", "quality": "bronze", "note": "Diagnosis codes stored as ARRAY<STRING> instead of 25 individual columns"},
+      {"name": "raw_pharmacy_claim", "schema": "claims_raw", "type": "Delta table", "purpose": "Pharmacy claims", "quality": "bronze"},
+      {"name": "stg_member_latest", "schema": "claims_staging", "type": "Delta table", "purpose": "Deduplicated member with PHI masking", "quality": "silver"},
+      {"name": "stg_medical_claim_current", "schema": "claims_staging", "type": "Delta table", "purpose": "ADR-deduped medical claims", "quality": "silver", "adr_priority": "PAID=1, ADJUSTED=2, DENIED=3, REVERSED=4"},
+      {"name": "stg_pharmacy_claim_current", "schema": "claims_staging", "type": "Delta table", "purpose": "ADR-deduped pharmacy claims", "quality": "silver"},
+      {"name": "dim_member", "schema": "claims_warehouse", "type": "Delta table", "purpose": "SCD Type 2 member dimension"},
+      {"name": "dim_provider", "schema": "claims_warehouse", "type": "Delta table", "purpose": "Provider dimension"},
+      {"name": "dim_date", "schema": "claims_warehouse", "type": "Delta table", "purpose": "Calendar dimension"},
+      {"name": "fct_medical_claim", "schema": "claims_warehouse", "type": "Delta table", "purpose": "Medical claim facts"},
+      {"name": "fct_pharmacy_claim", "schema": "claims_warehouse", "type": "Delta table", "purpose": "Pharmacy claim facts"},
+      {"name": "fct_encounter", "schema": "claims_warehouse", "type": "Delta table", "purpose": "Encounter groupings"},
+      {"name": "mart_member_months", "schema": "claims_mart", "type": "Delta table", "purpose": "Member month enrollment"},
+      {"name": "mart_claim_summary", "schema": "claims_mart", "type": "Delta table", "purpose": "Claims aggregation"},
+      {"name": "mart_encounter_summary", "schema": "claims_mart", "type": "Delta table", "purpose": "Encounter aggregation"},
+      {"name": "mart_quality_measures", "schema": "claims_mart", "type": "Delta table", "purpose": "HEDIS quality measures"}
+    ],
+    "notebooks": [
+      {"name": "01_claims_ingestion.py", "purpose": "Auto Loader ingestion (cloudFiles) for raw claims", "framework": "PySpark"},
+      {"name": "02_adr_deduplication.py", "purpose": "ADR dedup using PySpark DataFrame API", "adr_priority": "PAID=1, ADJUSTED=2, DENIED=3, REVERSED=4", "framework": "PySpark"},
+      {"name": "03_encounter_grouping.py", "purpose": "Gap-and-island encounter grouping (CORRECT)", "algorithm": "proper overlap detection with LAG/LEAD", "framework": "PySpark"},
+      {"name": "04_diagnosis_code_processing.py", "purpose": "Explode ARRAY<STRING> diagnosis_codes to rows", "framework": "PySpark"},
+      {"name": "05_phi_masking.py", "purpose": "PHI masking at STAGING layer using SHA-256", "masking_stage": "BEFORE warehouse (staging)", "framework": "PySpark"},
+      {"name": "06_member_month_enrollment.py", "purpose": "Member month enrollment calculation", "framework": "PySpark"},
+      {"name": "07_quality_measures.py", "purpose": "HEDIS quality measure calculation", "framework": "PySpark"}
+    ],
+    "stored_procedures": [
+      {"name": "sp_daily_claims_pipeline.sql", "purpose": "Daily claims ETL pipeline"},
+      {"name": "sp_monthly_enrollment.sql", "purpose": "Monthly enrollment processing"}
+    ],
+    "jobs": [
+      {"name": "daily_claims_job.json", "type": "Databricks Jobs API", "purpose": "Daily claims pipeline job config"},
+      {"name": "monthly_enrollment_job.json", "type": "Databricks Jobs API", "purpose": "Monthly enrollment job config"}
+    ]
+  },
+  "snowflake": {
+    "platform": "Snowflake",
+    "base_path": "snowflake/",
+    "databases_schemas": [
+      {"name": "CLAIMS_DW.RAW", "purpose": "Raw landing zone"},
+      {"name": "CLAIMS_DW.STAGING", "purpose": "Staging layer"},
+      {"name": "CLAIMS_DW.WAREHOUSE", "purpose": "Data warehouse"},
+      {"name": "CLAIMS_DW.MART", "purpose": "Reporting marts"}
+    ],
+    "tables": [
+      {"name": "RAW_MEMBER_ELIGIBILITY", "schema": "CLAIMS_DW.RAW", "purpose": "Member enrollment/eligibility", "features": ["CHANGE_TRACKING", "CLUSTER BY", "DATA_RETENTION_TIME_IN_DAYS"]},
+      {"name": "RAW_MEDICAL_CLAIM", "schema": "CLAIMS_DW.RAW", "purpose": "Medical claims", "note": "Hybrid diagnosis storage: VARIANT JSON array + 10 individual columns", "features": ["VARIANT type", "CHANGE_TRACKING"]},
+      {"name": "RAW_PHARMACY_CLAIM", "schema": "CLAIMS_DW.RAW", "purpose": "Pharmacy claims", "features": ["CHANGE_TRACKING"]},
+      {"name": "DIM_MEMBER", "schema": "CLAIMS_DW.WAREHOUSE", "purpose": "SCD Type 2 member dimension"},
+      {"name": "DIM_PROVIDER", "schema": "CLAIMS_DW.WAREHOUSE", "purpose": "Provider dimension"},
+      {"name": "DIM_DATE", "schema": "CLAIMS_DW.WAREHOUSE", "purpose": "Calendar dimension"},
+      {"name": "FCT_MEDICAL_CLAIM", "schema": "CLAIMS_DW.WAREHOUSE", "purpose": "Medical claim facts"},
+      {"name": "FCT_PHARMACY_CLAIM", "schema": "CLAIMS_DW.WAREHOUSE", "purpose": "Pharmacy claim facts"},
+      {"name": "FCT_ENCOUNTER", "schema": "CLAIMS_DW.WAREHOUSE", "purpose": "Encounter groupings"},
+      {"name": "MART_MEMBER_MONTHS", "schema": "CLAIMS_DW.MART", "purpose": "Member month enrollment"},
+      {"name": "MART_CLAIM_SUMMARY", "schema": "CLAIMS_DW.MART", "purpose": "Claims aggregation"},
+      {"name": "MART_ENCOUNTER_SUMMARY", "schema": "CLAIMS_DW.MART", "purpose": "Encounter aggregation"},
+      {"name": "MART_QUALITY_MEASURES", "schema": "CLAIMS_DW.MART", "purpose": "HEDIS quality measures"}
+    ],
+    "views": [
+      {"name": "V_MEMBER_LATEST", "schema": "CLAIMS_DW.STAGING", "purpose": "Deduplicated member eligibility", "features": ["QUALIFY ROW_NUMBER()", "COPY GRANTS"]},
+      {"name": "V_MEDICAL_CLAIM_CURRENT", "schema": "CLAIMS_DW.STAGING", "purpose": "ADR-deduped medical claims", "adr_priority": "PAID=1, ADJUSTED=2, REVERSED=3, DENIED=4"},
+      {"name": "V_PHARMACY_CLAIM_CURRENT", "schema": "CLAIMS_DW.STAGING", "purpose": "ADR-deduped pharmacy claims", "adr_priority": "PAID=1, ADJUSTED=2, REVERSED=3, DENIED=4"}
+    ],
+    "stored_procedures": [
+      {"name": "SP_CLAIMS_ADR_DEDUP", "purpose": "ADR deduplication (JavaScript)", "language": "JavaScript", "adr_priority": "PAID=1, ADJUSTED=2, REVERSED=3, DENIED=4"},
+      {"name": "SP_ENCOUNTER_GROUPING", "purpose": "Gap-and-island encounter grouping (SQL)", "language": "SQL", "algorithm": "proper overlap detection (CORRECT)"},
+      {"name": "SP_DIAGNOSIS_CODE_FLATTEN", "purpose": "LATERAL FLATTEN on VARIANT + individual columns"},
+      {"name": "SP_PHI_MASKING", "purpose": "Dynamic Data Masking policies", "masking_stage": "ALWAYS ACTIVE at column level on RAW tables"},
+      {"name": "SP_MEMBER_MONTH_ENROLLMENT", "purpose": "Monthly enrollment calculation"}
+    ],
+    "tasks": [
+      {"name": "daily_claims_pipeline_task.sql", "purpose": "Daily pipeline DAG with SCHEDULE and AFTER dependencies"},
+      {"name": "monthly_enrollment_task.sql", "purpose": "Monthly enrollment task"}
+    ],
+    "pipes": [
+      {"name": "claims_raw_pipe.sql", "purpose": "Snowpipe auto-ingestion from S3/Azure stages"},
+      {"name": "enrollment_raw_pipe.sql", "purpose": "Enrollment data pipe"}
+    ],
+    "streams": [
+      {"name": "claims_change_streams.sql", "purpose": "CDC streams on raw tables for incremental processing"}
+    ]
+  },
+  "cross_platform_equivalence": {
+    "semantically_equivalent_objects": [
+      {
+        "business_function": "Member Eligibility Storage",
+        "teradata": "CLAIMS_RAW.RAW_MEMBER_ELIGIBILITY",
+        "databricks": "claims_raw.raw_member_eligibility",
+        "snowflake": "CLAIMS_DW.RAW.RAW_MEMBER_ELIGIBILITY"
+      },
+      {
+        "business_function": "Medical Claims Storage",
+        "teradata": "CLAIMS_RAW.RAW_MEDICAL_CLAIM",
+        "databricks": "claims_raw.raw_medical_claim",
+        "snowflake": "CLAIMS_DW.RAW.RAW_MEDICAL_CLAIM"
+      },
+      {
+        "business_function": "Pharmacy Claims Storage",
+        "teradata": "CLAIMS_RAW.RAW_PHARMACY_CLAIM",
+        "databricks": "claims_raw.raw_pharmacy_claim",
+        "snowflake": "CLAIMS_DW.RAW.RAW_PHARMACY_CLAIM"
+      },
+      {
+        "business_function": "Member Deduplication",
+        "teradata": "CLAIMS_STG.V_MEMBER_LATEST (view)",
+        "databricks": "claims_staging.stg_member_latest (materialized table)",
+        "snowflake": "CLAIMS_DW.STAGING.V_MEMBER_LATEST (view)"
+      },
+      {
+        "business_function": "Medical Claim ADR Dedup",
+        "teradata": "CLAIMS_STG.V_MEDICAL_CLAIM_CURRENT + sp_claims_adr_dedup",
+        "databricks": "claims_staging.stg_medical_claim_current + 02_adr_deduplication.py",
+        "snowflake": "CLAIMS_DW.STAGING.V_MEDICAL_CLAIM_CURRENT + SP_CLAIMS_ADR_DEDUP"
+      },
+      {
+        "business_function": "Encounter Grouping",
+        "teradata": "sp_encounter_grouping (NAIVE GROUP BY)",
+        "databricks": "03_encounter_grouping.py (gap-and-island)",
+        "snowflake": "SP_ENCOUNTER_GROUPING (gap-and-island)"
+      },
+      {
+        "business_function": "Diagnosis Code Processing",
+        "teradata": "sp_diagnosis_code_flatten (UNION ALL 25 columns)",
+        "databricks": "04_diagnosis_code_processing.py (explode ARRAY)",
+        "snowflake": "SP_DIAGNOSIS_CODE_FLATTEN (LATERAL FLATTEN VARIANT + 10 columns)"
+      },
+      {
+        "business_function": "PHI Masking",
+        "teradata": "sp_phi_masking (query-time views AFTER marts)",
+        "databricks": "05_phi_masking.py (SHA-256 at STAGING layer)",
+        "snowflake": "SP_PHI_MASKING (Dynamic Data Masking policies on RAW)"
+      },
+      {
+        "business_function": "Daily Pipeline Orchestration",
+        "teradata": "daily_claims_load.bteq + daily_claims_sequence.txt (cron)",
+        "databricks": "daily_claims_job.json (Databricks Jobs API)",
+        "snowflake": "daily_claims_pipeline_task.sql (Snowflake Tasks)"
+      },
+      {
+        "business_function": "Data Ingestion",
+        "teradata": "claims_file_load.fl (FastLoad) + BTEQ .IMPORT",
+        "databricks": "01_claims_ingestion.py (Auto Loader / cloudFiles)",
+        "snowflake": "claims_raw_pipe.sql (Snowpipe) + enrollment_raw_pipe.sql"
+      }
+    ]
+  }
+}

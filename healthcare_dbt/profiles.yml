@@ -1,0 +1,29 @@
+# Connection profiles for healthcare claims dbt project
+# In production, credentials are injected via environment variables.
+
+healthcare_claims_dw:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: CLAIMS_ETL_ROLE
+      database: CLAIMS_DW
+      warehouse: CLAIMS_WH
+      schema: DEV
+      threads: 8
+      client_session_keep_alive: true
+
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: CLAIMS_ETL_ROLE
+      database: CLAIMS_DW
+      warehouse: CLAIMS_WH
+      schema: PROD
+      threads: 16
+      client_session_keep_alive: true

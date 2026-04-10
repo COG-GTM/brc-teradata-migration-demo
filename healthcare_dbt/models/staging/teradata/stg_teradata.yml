@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: stg_teradata__eligibility
+    description: >
+      Teradata member eligibility mapped to Tuva input layer.
+      Source: teradata/claims/ddl/02_raw_tables.sql (CLAIMS_RAW.RAW_MEMBER_ELIGIBILITY)
+    columns:
+      - name: person_id
+        description: "Member identifier (mapped from member_id)"
+        tests:
+          - not_null
+      - name: enrollment_start_date
+        tests:
+          - not_null
+
+  - name: stg_teradata__medical_claim
+    description: >
+      Teradata medical claims mapped to Tuva input layer.
+      25 individual diagnosis code columns mapped to diagnosis_code_1..25.
+      Source: teradata/claims/ddl/02_raw_tables.sql (CLAIMS_RAW.RAW_MEDICAL_CLAIM)
+    columns:
+      - name: claim_id
+        tests:
+          - not_null
+      - name: person_id
+        tests:
+          - not_null
+      - name: claim_start_date
+        tests:
+          - not_null
+
+  - name: stg_teradata__pharmacy_claim
+    description: >
+      Teradata pharmacy claims mapped to Tuva input layer.
+      Source: teradata/claims/ddl/02_raw_tables.sql (CLAIMS_RAW.RAW_PHARMACY_CLAIM)
+    columns:
+      - name: claim_id
+        tests:
+          - not_null
+      - name: person_id
+        tests:
+          - not_null

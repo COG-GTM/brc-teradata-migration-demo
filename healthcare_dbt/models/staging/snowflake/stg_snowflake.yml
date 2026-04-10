@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: stg_snowflake__eligibility
+    description: >
+      Snowflake member eligibility mapped to Tuva input layer.
+      Dynamic Data Masking policies remain active on source columns.
+      Source: snowflake/ddl/02_raw_tables.sql (CLAIMS_DW.RAW.RAW_MEMBER_ELIGIBILITY)
+    columns:
+      - name: person_id
+        description: "Member identifier (mapped from member_id)"
+        tests:
+          - not_null
+      - name: enrollment_start_date
+        tests:
+          - not_null
+
+  - name: stg_snowflake__medical_claim
+    description: >
+      Snowflake medical claims mapped to Tuva input layer.
+      Hybrid diagnosis codes (VARIANT + 10 individual columns) resolved:
+      COALESCE individual columns with VARIANT array for positions 1-10,
+      VARIANT-only for positions 11-25.
+      Source: snowflake/ddl/02_raw_tables.sql (CLAIMS_DW.RAW.RAW_MEDICAL_CLAIM)
+    columns:
+      - name: claim_id
+        tests:
+          - not_null
+      - name: person_id
+        tests:
+          - not_null
+      - name: claim_start_date
+        tests:
+          - not_null
+
+  - name: stg_snowflake__pharmacy_claim
+    description: >
+      Snowflake pharmacy claims mapped to Tuva input layer.
+      Source: snowflake/ddl/02_raw_tables.sql (CLAIMS_DW.RAW.RAW_PHARMACY_CLAIM)
+    columns:
+      - name: claim_id
+        tests:
+          - not_null
+      - name: person_id
+        tests:
+          - not_null

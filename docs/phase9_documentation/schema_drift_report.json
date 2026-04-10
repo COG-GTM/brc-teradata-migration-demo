@@ -1,0 +1,55 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-10",
+    "description": "Phase 9: Schema drift report - every column naming, type, and structural difference with resolution"
+  },
+  "naming_drift": [
+    {"tuva_column": "person_id", "teradata": "member_id", "databricks": "patient_id (medical) / member_id (eligibility)", "snowflake": "member_id", "resolution": "All mapped to person_id in staging models"},
+    {"tuva_column": "claim_start_date", "teradata": "service_date_from", "databricks": "claim_start_date", "snowflake": "start_date", "resolution": "All mapped to claim_start_date"},
+    {"tuva_column": "claim_end_date", "teradata": "service_date_to", "databricks": "claim_end_date", "snowflake": "end_date", "resolution": "All mapped to claim_end_date"},
+    {"tuva_column": "claim_status", "teradata": "claim_status", "databricks": "claim_status", "snowflake": "status_code", "resolution": "Snowflake status_code mapped to claim_status"},
+    {"tuva_column": "enrollment_start_date", "teradata": "enrollment_start_date", "databricks": "coverage_start_date", "snowflake": "eligibility_start_date", "resolution": "All mapped to enrollment_start_date"},
+    {"tuva_column": "enrollment_end_date", "teradata": "enrollment_end_date", "databricks": "coverage_end_date", "snowflake": "eligibility_end_date", "resolution": "All mapped to enrollment_end_date"},
+    {"tuva_column": "dispensing_date", "teradata": "dispensing_date", "databricks": "fill_date", "snowflake": "fill_date", "resolution": "All mapped to dispensing_date"},
+    {"tuva_column": "charge_amount", "teradata": "charge_amount", "databricks": "billed_amount", "snowflake": "billed_amount", "resolution": "DB/SF billed_amount mapped to charge_amount"},
+    {"tuva_column": "copayment_amount", "teradata": "copay", "databricks": "copay_amount", "snowflake": "copay_amount", "resolution": "All mapped to copayment_amount"},
+    {"tuva_column": "coinsurance_amount", "teradata": "coinsurance", "databricks": "coinsurance_amount", "snowflake": "coinsurance_amount", "resolution": "TD coinsurance mapped to coinsurance_amount"},
+    {"tuva_column": "deductible_amount", "teradata": "deductible", "databricks": "deductible_amount", "snowflake": "deductible_amount", "resolution": "TD deductible mapped to deductible_amount"},
+    {"tuva_column": "hcpcs_code", "teradata": "hcpcs_code", "databricks": "procedure_code", "snowflake": "cpt_code", "resolution": "All mapped to hcpcs_code"},
+    {"tuva_column": "bill_type_code", "teradata": "bill_type", "databricks": "type_of_bill_code", "snowflake": "bill_type", "resolution": "All mapped to bill_type_code"},
+    {"tuva_column": "ms_drg_code", "teradata": "ms_drg", "databricks": "drg_code", "snowflake": "drg_code", "resolution": "All mapped to ms_drg_code"},
+    {"tuva_column": "rendering_npi", "teradata": "rendering_npi", "databricks": "rendering_provider_npi", "snowflake": "rendering_provider_npi", "resolution": "All mapped to rendering_npi"},
+    {"tuva_column": "billing_npi", "teradata": "billing_npi", "databricks": "billing_provider_npi", "snowflake": "billing_provider_npi", "resolution": "All mapped to billing_npi"},
+    {"tuva_column": "prescribing_provider_npi", "teradata": "prescribing_npi", "databricks": "prescriber_npi", "snowflake": "prescribing_provider_npi", "resolution": "All mapped to prescribing_provider_npi"},
+    {"tuva_column": "dispensing_provider_npi", "teradata": "dispensing_npi", "databricks": "pharmacy_npi", "snowflake": "pharmacy_npi", "resolution": "All mapped to dispensing_provider_npi"},
+    {"tuva_column": "plan", "teradata": "plan_id", "databricks": "plan_id", "snowflake": "plan_code", "resolution": "All mapped to plan"},
+    {"tuva_column": "state", "teradata": "state", "databricks": "state_code", "snowflake": "state_code", "resolution": "All mapped to state"},
+    {"tuva_column": "quantity", "teradata": "quantity", "databricks": "quantity_dispensed", "snowflake": "quantity_dispensed", "resolution": "All mapped to quantity"},
+    {"tuva_column": "revenue_center_code", "teradata": "revenue_center_code", "databricks": "revenue_code", "snowflake": "revenue_code", "resolution": "All mapped to revenue_center_code"}
+  ],
+  "type_drift": [
+    {"column": "paid_amount (and all financial)", "teradata": "DECIMAL(18,2)", "databricks": "DOUBLE", "snowflake": "NUMBER(18,2)", "resolution": "All cast to NUMBER(18,2) in staging models (DRIFT-006)", "risk": "Databricks DOUBLE may have rounding differences"},
+    {"column": "gender", "teradata": "CHAR(1)", "databricks": "STRING", "snowflake": "VARCHAR(1)", "resolution": "All cast to VARCHAR"},
+    {"column": "zip_code", "teradata": "CHAR(5)", "databricks": "STRING", "snowflake": "VARCHAR(10)", "resolution": "All cast to VARCHAR"},
+    {"column": "days_supply", "teradata": "SMALLINT", "databricks": "INT", "snowflake": "INTEGER", "resolution": "All cast to INTEGER"},
+    {"column": "quantity", "teradata": "DECIMAL(10,2)", "databricks": "DOUBLE", "snowflake": "NUMBER(10,3)", "resolution": "All cast to NUMBER(10,3)"}
+  ],
+  "structural_drift": [
+    {"drift_id": "DRIFT-003", "element": "Diagnosis code storage", "teradata": "25 individual VARCHAR columns (icd_diagnosis_code_1..25)", "databricks": "Single ARRAY<STRING> column (diagnosis_codes)", "snowflake": "Hybrid: VARIANT JSON array + 10 individual columns", "resolution": "Unified to 25 individual columns (diagnosis_code_1..25) to match Tuva input layer. Databricks array unpacked via indexing. Snowflake hybrid resolved with COALESCE of individual columns and VARIANT array extraction."},
+    {"drift_id": "EXTRA-001", "element": "net_paid_amount column", "teradata": "Not present", "databricks": "Not present", "snowflake": "NUMBER(18,2) - paid minus withhold and COB", "resolution": "Preserved as Snowflake-only column in staging. Set to NULL for other platforms. Not required by Tuva input layer."},
+    {"drift_id": "EXTRA-002", "element": "cob_amount column", "teradata": "Not present", "databricks": "Not present", "snowflake": "NUMBER(18,2)", "resolution": "Preserved as Snowflake-only column. Set to NULL for other platforms."},
+    {"drift_id": "EXTRA-003", "element": "withhold_amount column", "teradata": "Not present", "databricks": "Not present", "snowflake": "NUMBER(18,2)", "resolution": "Preserved as Snowflake-only column. Set to NULL for other platforms."},
+    {"drift_id": "MISSING-001", "element": "race column", "teradata": "VARCHAR(30)", "databricks": "Not present", "snowflake": "Not present", "resolution": "Set to NULL for Databricks and Snowflake. Passed through from Teradata where available."},
+    {"drift_id": "MISSING-002", "element": "diagnosis_code_type", "teradata": "Not present (assumed ICD-10-CM)", "databricks": "STRING", "snowflake": "Not present (assumed ICD-10-CM)", "resolution": "Set to 'icd-10-cm' as default for all platforms. Preserved from Databricks where explicitly stored."}
+  ],
+  "value_encoding_drift": [
+    {"drift_id": "DRIFT-007", "element": "claim_type values", "teradata": "I/P/O (single char)", "databricks": "INSTITUTIONAL/PROFESSIONAL/OUTPATIENT (full text)", "snowflake": "I/P (single char, no O)", "resolution": "Normalized to Tuva standard: 'institutional', 'professional'. Teradata 'O' mapped to 'professional'. All CASE mappings in staging models."}
+  ],
+  "summary": {
+    "total_naming_drifts": 22,
+    "total_type_drifts": 5,
+    "total_structural_drifts": 6,
+    "total_value_encoding_drifts": 1,
+    "all_resolved": true
+  }
+}
