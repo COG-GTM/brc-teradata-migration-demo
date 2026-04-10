@@ -1,0 +1,72 @@
+# Healthcare Claims Data Warehouse - Unified dbt Project
+# Consolidates Teradata, Databricks, and Snowflake into a single source of truth
+# using the Tuva Health data model as the target schema.
+
+name: 'healthcare_claims_dw'
+version: '1.0.0'
+config-version: 2
+
+profile: 'healthcare_claims_dw'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  # Tuva configuration
+  tuva_database: 'CLAIMS_DW'
+  tuva_schema: 'TUVA_INPUT'
+  input_database: 'CLAIMS_DW'
+  input_schema: 'TUVA_INPUT'
+
+  # Source platform selection (used for initial load vs ongoing sync)
+  primary_source_platform: 'snowflake'  # snowflake | databricks | teradata
+
+  # ADR dedup priority (CMS-correct order per DRIFT-001 resolution)
+  adr_priority_paid: 1
+  adr_priority_adjusted: 2
+  adr_priority_denied: 3
+  adr_priority_reversed: 4
+
+  # PHI masking configuration
+  phi_masking_enabled: true
+  phi_privileged_roles: ['CLAIMS_ETL_ROLE', 'SYSADMIN', 'ACCOUNTADMIN']
+
+models:
+  healthcare_claims_dw:
+    staging:
+      +schema: staging
+      +materialized: view
+      teradata:
+        +tags: ['teradata', 'staging', 'legacy']
+      databricks:
+        +tags: ['databricks', 'staging', 'legacy']
+      snowflake:
+        +tags: ['snowflake', 'staging', 'legacy']
+    intermediate:
+      +schema: intermediate
+      +materialized: table
+      +tags: ['intermediate']
+    marts:
+      +schema: marts
+      +materialized: table
+      +tags: ['marts']
+    migration:
+      +schema: migration
+      +materialized: table
+      +tags: ['migration']
+
+seeds:
+  healthcare_claims_dw:
+    +schema: seeds
+
+tests:
+  healthcare_claims_dw:
+    +severity: warn

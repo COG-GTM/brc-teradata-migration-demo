@@ -1,0 +1,187 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-10",
+    "description": "Phase 3: Logic drift detection across Teradata, Databricks, and Snowflake healthcare claims platforms"
+  },
+  "drift_findings": [
+    {
+      "drift_id": "DRIFT-001",
+      "category": "ADR Deduplication Priority",
+      "severity": "CRITICAL",
+      "description": "Each platform implements a different priority order for resolving duplicate claims when the same claim appears with multiple statuses (Paid, Adjusted, Denied, Reversed).",
+      "platforms": {
+        "teradata": {
+          "source_object": "teradata/claims/stored_procedures/sp_claims_adr_dedup.sql",
+          "priority_order": "PAID=1, DENIED=2, ADJUSTED=3, REVERSED=4",
+          "implementation": "QUALIFY ROW_NUMBER() with CASE expression in staging view + stored procedure",
+          "note": "INTENTIONALLY WRONG: Denied is prioritized BEFORE Adjusted. Per CMS standards, an Adjusted claim is a correction to a paid claim and should take priority over a Denied claim."
+        },
+        "databricks": {
+          "source_object": "databricks/ddl/03_staging_tables.sql + databricks/notebooks/02_adr_deduplication.py",
+          "priority_order": "PAID=1, ADJUSTED=2, DENIED=3, REVERSED=4",
+          "implementation": "PySpark Window function with orderBy on CASE-derived priority column",
+          "note": "CORRECT per CMS standards: Paid > Adjusted > Denied > Reversed"
+        },
+        "snowflake": {
+          "source_object": "snowflake/ddl/03_staging_views.sql + snowflake/stored_procedures/sp_claims_adr_dedup.sql",
+          "priority_order": "PAID=1, ADJUSTED=2, REVERSED=3, DENIED=4",
+          "implementation": "QUALIFY ROW_NUMBER() in staging view + JavaScript stored procedure MERGE",
+          "note": "PARTIALLY WRONG: Reversed is prioritized BEFORE Denied. Per CMS, Denied should come before Reversed since denied claims represent actual adjudication decisions."
+        }
+      },
+      "correct_implementation": "PAID=1, ADJUSTED=2, DENIED=3, REVERSED=4 (Databricks version)",
+      "cms_reference": "CMS Claims Processing Manual Chapter 1, Section 80.3.2 - Claim adjustment/replacement hierarchy",
+      "impact": "Different priority orders produce different output claim counts and paid amounts. A claim that exists in both DENIED and ADJUSTED status would be kept as DENIED on Teradata (wrong) but as ADJUSTED on Databricks (correct). This directly affects financial reporting, PMPM calculations, and medical loss ratio."
+    },
+    {
+      "drift_id": "DRIFT-002",
+      "category": "Encounter Grouping Algorithm",
+      "severity": "HIGH",
+      "description": "Teradata uses a naive GROUP BY approach that fails to merge overlapping date ranges, while Databricks and Snowflake use proper gap-and-island overlap detection.",
+      "platforms": {
+        "teradata": {
+          "source_object": "teradata/claims/stored_procedures/sp_encounter_grouping.sql",
+          "algorithm": "Simple GROUP BY member_id, service_date_from",
+          "behavior": "Claims with different start dates are NEVER merged into the same encounter, even if their date ranges overlap. Example: Claim A (Jan 5-10) and Claim B (Jan 8-12) become TWO separate encounters instead of ONE.",
+          "note": "INTENTIONALLY WRONG: Naive approach that misses overlapping ranges"
+        },
+        "databricks": {
+          "source_object": "databricks/notebooks/03_encounter_grouping.py",
+          "algorithm": "Gap-and-island with LAG/LEAD window functions and running max end_date",
+          "behavior": "Properly detects overlapping date ranges and merges them into single encounters. Uses cumulative sum of island-start flags to assign encounter group IDs.",
+          "note": "CORRECT: Proper overlap detection"
+        },
+        "snowflake": {
+          "source_object": "snowflake/stored_procedures/sp_encounter_grouping.sql",
+          "algorithm": "Gap-and-island with MAX() OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) for running max end_date",
+          "behavior": "Proper overlap detection using CONDITIONAL_TRUE_EVENT pattern. Tracks running max of end_date and starts new island when start_date exceeds previous max end_date.",
+          "note": "CORRECT: Same algorithm as Databricks, different SQL syntax"
+        }
+      },
+      "correct_implementation": "Gap-and-island overlap detection (Databricks/Snowflake versions)",
+      "impact": "Teradata produces MORE encounters than the correct count because it fails to merge overlapping claims. This inflates encounter counts, skews encounter-level cost analytics, and produces incorrect ALOS (average length of stay) metrics. Readmission calculations would also be affected since encounters that should be merged would appear as separate admissions."
+    },
+    {
+      "drift_id": "DRIFT-003",
+      "category": "Diagnosis Code Storage and Processing",
+      "severity": "MEDIUM",
+      "description": "Each platform stores and processes ICD diagnosis codes using fundamentally different data structures.",
+      "platforms": {
+        "teradata": {
+          "source_object": "teradata/claims/ddl/02_raw_tables.sql",
+          "structure": "25 individual VARCHAR(10) columns: icd_diagnosis_code_1 through icd_diagnosis_code_25",
+          "flattening": "sp_diagnosis_code_flatten uses UNION ALL across all 25 columns to produce a normalized row-per-diagnosis table",
+          "max_diagnoses": 25,
+          "query_pattern": "Direct column reference: WHERE icd_diagnosis_code_1 = 'E11.9' OR icd_diagnosis_code_2 = 'E11.9' OR ..."
+        },
+        "databricks": {
+          "source_object": "databricks/ddl/02_raw_tables.sql",
+          "structure": "Single ARRAY<STRING> column: diagnosis_codes",
+          "flattening": "PySpark explode() function in 04_diagnosis_code_processing.py",
+          "max_diagnoses": "Unlimited (array size)",
+          "query_pattern": "ARRAY_CONTAINS(diagnosis_codes, 'E11.9') or explode + filter"
+        },
+        "snowflake": {
+          "source_object": "snowflake/ddl/02_raw_tables.sql",
+          "structure": "Hybrid: VARIANT JSON array (diagnosis_codes) + 10 individual VARCHAR(10) columns (icd_diagnosis_code_1..10)",
+          "flattening": "LATERAL FLATTEN on VARIANT column, or UNION over 10 individual columns",
+          "max_diagnoses": "Unlimited via VARIANT, 10 via individual columns",
+          "query_pattern": "ARRAY_CONTAINS(diagnosis_codes, 'E11.9') for VARIANT or direct column reference for individual columns"
+        }
+      },
+      "correct_implementation": "Unified approach: Store as VARIANT/ARRAY for flexibility, but always provide diagnosis_code_1 through diagnosis_code_25 as individual columns for backward compatibility and direct querying. The Tuva input layer expects individual columns (diagnosis_code_1 through diagnosis_code_25).",
+      "impact": "Different maximum diagnosis counts: Teradata supports 25, Snowflake individual columns only 10 (but unlimited via VARIANT). Claims with >10 diagnosis codes would lose data on Snowflake individual columns but retain it in VARIANT. Different query patterns required across platforms. Tuva expects individual columns, so array-based storage must be unpacked."
+    },
+    {
+      "drift_id": "DRIFT-004",
+      "category": "PHI Masking Strategy",
+      "severity": "HIGH",
+      "description": "Each platform applies PHI (Protected Health Information) masking at a different stage of the pipeline, creating different data exposure risk profiles.",
+      "platforms": {
+        "teradata": {
+          "source_object": "teradata/claims/stored_procedures/sp_phi_masking.sql",
+          "masking_stage": "AFTER mart layer (query-time via views)",
+          "mechanism": "REPLACE VIEW with CASE/SUBSTR transformations on DIM_MEMBER columns",
+          "phi_exposure": "FULL PHI exists in CLAIMS_DWH.DIM_MEMBER (warehouse layer). Masking only applied when querying through CLAIMS_MART views.",
+          "columns_masked": ["date_of_birth", "zip_code", "subscriber_id", "member names"],
+          "note": "HIGHEST RISK: Unmasked PHI persists in warehouse tables. Any direct query to DWH exposes PHI."
+        },
+        "databricks": {
+          "source_object": "databricks/notebooks/05_phi_masking.py",
+          "masking_stage": "DURING staging layer (before warehouse)",
+          "mechanism": "PySpark SHA-256 hashing and date truncation applied during ETL",
+          "phi_exposure": "PHI exists only in claims_raw (bronze). Staging and warehouse layers contain masked data.",
+          "columns_masked": ["date_of_birth", "ssn", "first_name", "last_name", "address", "phone", "email"],
+          "note": "MODERATE RISK: PHI in raw layer only. Masking is irreversible (SHA-256 hash)."
+        },
+        "snowflake": {
+          "source_object": "snowflake/stored_procedures/sp_phi_masking.sql",
+          "masking_stage": "ALWAYS ACTIVE via Dynamic Data Masking policies on RAW tables",
+          "mechanism": "CREATE MASKING POLICY applied to columns. Role-based: privileged roles see real data, others see masked.",
+          "phi_exposure": "PHI exists in raw tables but is dynamically masked at query time based on role. Data is never permanently transformed.",
+          "columns_masked": ["ssn_encrypted", "first_name", "last_name", "date_of_birth", "phone_number", "email", "address_line_1", "address_line_2"],
+          "note": "LOWEST RISK: Masking enforced by platform at query time. No code changes needed to ensure masking."
+        }
+      },
+      "correct_implementation": "Snowflake Dynamic Data Masking is the recommended approach for the unified model. Apply masking policies at the RAW layer with role-based access. This provides HIPAA compliance without data duplication or irreversible transformation.",
+      "hipaa_reference": "45 CFR 164.514(b) - Safe Harbor method for de-identification",
+      "impact": "Teradata approach exposes PHI to any user with DWH access, creating HIPAA compliance risk. Databricks approach permanently destroys PHI (cannot be recovered for legitimate uses). Snowflake approach balances security with usability."
+    },
+    {
+      "drift_id": "DRIFT-005",
+      "category": "Member Eligibility Deduplication",
+      "severity": "LOW",
+      "description": "Minor differences in tie-breaking logic when deduplicating member eligibility records.",
+      "platforms": {
+        "teradata": {
+          "source_object": "teradata/claims/ddl/03_staging_views.sql",
+          "dedup_key": "PARTITION BY member_id ORDER BY enrollment_start_date DESC, load_ts DESC",
+          "note": "Keeps latest enrollment period"
+        },
+        "databricks": {
+          "source_object": "databricks/ddl/03_staging_tables.sql",
+          "dedup_key": "PARTITION BY member_id ORDER BY coverage_start_date DESC, load_timestamp DESC",
+          "note": "Same logic, different column names"
+        },
+        "snowflake": {
+          "source_object": "snowflake/ddl/03_staging_views.sql",
+          "dedup_key": "PARTITION BY member_id ORDER BY load_timestamp DESC, eligibility_start_date DESC",
+          "note": "DIFFERENT: load_timestamp is PRIMARY sort, eligibility_start_date is SECONDARY. Other platforms sort by date first, then timestamp."
+        }
+      },
+      "impact": "When two eligibility records have the same start date but different load timestamps, Snowflake may keep a different record than TD/DB. In practice this is rare and low-impact."
+    },
+    {
+      "drift_id": "DRIFT-006",
+      "category": "Financial Amount Data Types",
+      "severity": "MEDIUM",
+      "description": "Databricks uses DOUBLE (floating point) for financial amounts while Teradata and Snowflake use fixed-precision DECIMAL/NUMBER.",
+      "platforms": {
+        "teradata": {"type": "DECIMAL(18,2)", "note": "Fixed precision - exact arithmetic"},
+        "databricks": {"type": "DOUBLE", "note": "Floating point - subject to rounding errors"},
+        "snowflake": {"type": "NUMBER(18,2)", "note": "Fixed precision - exact arithmetic"}
+      },
+      "impact": "Floating point arithmetic can produce rounding differences. SUM(paid_amount) across millions of claims may differ by cents or even dollars between Databricks and TD/SF. This affects financial reconciliation, MLR calculations, and regulatory reporting.",
+      "correct_implementation": "Use NUMBER(18,2) / DECIMAL(18,2) for all financial amounts in the unified model."
+    },
+    {
+      "drift_id": "DRIFT-007",
+      "category": "Claim Type Value Encoding",
+      "severity": "LOW",
+      "description": "Different platforms use different code sets for the same claim type concept.",
+      "platforms": {
+        "teradata": {"values": "I (Institutional), P (Professional), O (Outpatient)", "note": "Single-char codes"},
+        "databricks": {"values": "INSTITUTIONAL, PROFESSIONAL, OUTPATIENT", "note": "Full text strings"},
+        "snowflake": {"values": "I (Institutional), P (Professional)", "note": "Single-char codes, no separate Outpatient"}
+      },
+      "impact": "Without normalization, JOIN conditions and GROUP BY aggregations produce mismatched results. The unified model should use Tuva standard codes."
+    }
+  ],
+  "summary": {
+    "total_drift_findings": 7,
+    "critical": 1,
+    "high": 2,
+    "medium": 2,
+    "low": 2
+  }
+}

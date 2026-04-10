@@ -7,6 +7,3 @@ packages:
 
   - package: calogica/dbt_expectations
     version: [">=0.10.0", "<1.0.0"]
-
-  - package: dbt-labs/dbt_date
-    version: [">=0.10.0", "<1.0.0"]

@@ -1,0 +1,59 @@
+################################################################################
+# Daily Claims ETL Sequence - Healthcare Claims Data Warehouse
+#
+# Scheduled via UC4/AutoSys/Control-M at 06:00 EST daily (all days)
+# Dependencies: upstream 837/835 clearinghouse extracts must arrive by 05:30 EST
+#
+# SLA: All jobs must complete by 09:00 EST for morning reporting
+################################################################################
+
+# Job Name                              | Dependency                  | Schedule      | Description
+# --------------------------------------|-----------------------------|--------------|-----------------------------------------
+# CLM_DAILY_001_PREFLIGHT               | CLEARINGHOUSE_EXTRACT_DONE  | 06:00 EST    | Pre-flight checks & file validation
+# CLM_DAILY_002_FASTLOAD_MEDICAL        | CLM_DAILY_001               | 06:05 EST    | FastLoad medical claims (claims_file_load.fl)
+# CLM_DAILY_003_FASTLOAD_PHARMACY       | CLM_DAILY_001               | 06:05 EST    | FastLoad pharmacy claims (pharmacy_file_load.fl)
+# CLM_DAILY_004_FASTLOAD_ELIGIBILITY    | CLM_DAILY_001               | 06:05 EST    | FastLoad eligibility feed
+# CLM_DAILY_005_ADR_DEDUP               | CLM_DAILY_002               | 06:30 EST    | ADR deduplication (sp_claims_adr_dedup)
+# CLM_DAILY_006_PHARMACY_LOAD           | CLM_DAILY_003               | 06:30 EST    | Pharmacy claim processing
+# CLM_DAILY_007_BTEQ_MAIN              | CLM_DAILY_005,006,004       | 07:00 EST    | Main BTEQ batch (daily_claims_load.bteq)
+#   -> sp_claims_adr_dedup             |                             |              |   ADR dedup for all claim types
+#   -> Pharmacy fact load              |                             |              |   Pharmacy claims into DWH
+#   -> sp_encounter_grouping           |                             |              |   Encounter grouping (30-day lookback)
+#   -> sp_diagnosis_code_flatten       |                             |              |   Diagnosis code normalization
+# CLM_DAILY_008_STATS_COLLECTION        | CLM_DAILY_007               | 08:00 EST    | Collect statistics on modified tables
+# CLM_DAILY_009_EXPORT_DEIDENTIFIED     | CLM_DAILY_007               | 08:00 EST    | TPT export de-identified claims
+# CLM_DAILY_010_VALIDATION              | CLM_DAILY_007,008,009       | 08:30 EST    | Row count, checksum, orphan validation
+# CLM_DAILY_011_NOTIFICATION            | CLM_DAILY_010               | 08:45 EST    | Email/Slack notification to ops team
+
+################################################################################
+# Execution Graph (parallel where possible):
+#
+#   PREFLIGHT
+#      |
+#      +---> FASTLOAD_MEDICAL -----+
+#      |                           |
+#      +---> FASTLOAD_PHARMACY ----+---> ADR_DEDUP --------+
+#      |                           |                        |
+#      +---> FASTLOAD_ELIGIBILITY -+---> PHARMACY_LOAD ----+
+#                                                           |
+#                                      BTEQ_MAIN <--------+
+#                                         |
+#                        +----------------+----------------+
+#                        |                |                |
+#                 STATS_COLLECTION  EXPORT_DEIDENTIFIED    |
+#                        |                |                |
+#                        +-------+--------+                |
+#                                |                         |
+#                           VALIDATION <------------------+
+#                                |
+#                          NOTIFICATION
+################################################################################
+
+################################################################################
+# Error Handling:
+#   - Each job has max 2 retries with 5-minute delay
+#   - FASTLOAD jobs: if error table exceeds 100 rows, fail the job
+#   - BTEQ_MAIN: errors are logged to CLAIMS_DWH.ETL_ERROR_LOG
+#   - On failure: email claims-ops@company.com and page on-call DBA
+#   - Critical path: PREFLIGHT -> FASTLOAD_MEDICAL -> ADR_DEDUP -> BTEQ_MAIN
+################################################################################

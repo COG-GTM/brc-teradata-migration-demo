@@ -1,0 +1,98 @@
+/*******************************************************************************
+ * claims_export.tpt
+ *
+ * Teradata Parallel Transporter job to export de-identified medical claims
+ * data to a delimited file for downstream analytics consumption.
+ *
+ * Exports from the PHI-masked mart view (V_MEDICAL_CLAIM_DEIDENTIFIED)
+ * to ensure HIPAA compliance in exported datasets.
+ ******************************************************************************/
+
+DEFINE JOB EXPORT_CLAIMS_DEIDENTIFIED
+DESCRIPTION 'Export de-identified medical claims for downstream analytics'
+(
+    DEFINE SCHEMA Claims_Export_Schema
+    (
+        claim_id                VARCHAR(30),
+        claim_line_number       VARCHAR(5),
+        member_sk               VARCHAR(10),
+        service_date_from_key   VARCHAR(8),
+        service_date_to_key     VARCHAR(8),
+        claim_type              VARCHAR(5),
+        place_of_service        VARCHAR(5),
+        ms_drg                  VARCHAR(5),
+        hcpcs_code              VARCHAR(10),
+        cpt_code                VARCHAR(10),
+        icd_diagnosis_code_1    VARCHAR(10),
+        icd_diagnosis_code_2    VARCHAR(10),
+        icd_diagnosis_code_3    VARCHAR(10),
+        claim_status            VARCHAR(10),
+        paid_amount             VARCHAR(20),
+        allowed_amount          VARCHAR(20),
+        plan_paid_amount        VARCHAR(20),
+        payer_id                VARCHAR(20),
+        encounter_id            VARCHAR(50),
+        gender                  VARCHAR(1),
+        age_band                VARCHAR(10),
+        zip_code_masked         VARCHAR(5),
+        state                   VARCHAR(2),
+        line_of_business        VARCHAR(20)
+    );
+
+    DEFINE OPERATOR SQL_SELECTOR
+    TYPE SELECTOR
+    SCHEMA Claims_Export_Schema
+    ATTRIBUTES
+    (
+        VARCHAR USERNAME        = @UserName,
+        VARCHAR USERPASSWORD    = @UserPassword,
+        VARCHAR TdpId           = @TdpId,
+        INTEGER MAXSESSIONS     = 4,
+        VARCHAR SELECTSTMT      = 'SELECT
+            claim_id,
+            CAST(claim_line_number AS VARCHAR(5)),
+            CAST(member_sk AS VARCHAR(10)),
+            CAST(service_date_from_key AS VARCHAR(8)),
+            CAST(service_date_to_key AS VARCHAR(8)),
+            claim_type,
+            place_of_service,
+            ms_drg,
+            hcpcs_code,
+            cpt_code,
+            icd_diagnosis_code_1,
+            icd_diagnosis_code_2,
+            icd_diagnosis_code_3,
+            claim_status,
+            TRIM(CAST(paid_amount AS VARCHAR(20))),
+            TRIM(CAST(allowed_amount AS VARCHAR(20))),
+            TRIM(CAST(plan_paid_amount AS VARCHAR(20))),
+            payer_id,
+            encounter_id,
+            gender,
+            age_band,
+            zip_code_masked,
+            state,
+            line_of_business
+        FROM CLAIMS_MART.V_MEDICAL_CLAIM_DEIDENTIFIED
+        WHERE service_date_from_key >= @StartDateKey
+          AND service_date_from_key <= @EndDateKey
+        ORDER BY claim_id, claim_line_number;'
+    );
+
+    DEFINE OPERATOR FILE_WRITER
+    TYPE DATACONNECTOR CONSUMER
+    SCHEMA Claims_Export_Schema
+    ATTRIBUTES
+    (
+        VARCHAR FILENAME        = @ExportFileName,
+        VARCHAR FORMAT          = 'DELIMITED',
+        VARCHAR TEXTDELIMITER   = '|',
+        VARCHAR OPERMODE        = 'WRITE',
+        VARCHAR OPENMODE        = 'Write',
+        VARCHAR INDICATORMODE   = 'N'
+    );
+
+    APPLY TO OPERATOR (FILE_WRITER[1])
+    SELECT *
+    FROM OPERATOR (SQL_SELECTOR[4]);
+);

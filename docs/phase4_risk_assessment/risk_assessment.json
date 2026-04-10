@@ -1,0 +1,180 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-10",
+    "description": "Phase 4: Business impact and compliance risk assessment for each logic drift finding"
+  },
+  "risk_assessments": [
+    {
+      "drift_id": "DRIFT-001",
+      "title": "ADR Deduplication Priority Order",
+      "severity": "CRITICAL",
+      "business_impact": {
+        "financial_reporting": "Different ADR priority orders produce different paid claim counts and total paid amounts. When a claim exists as both ADJUSTED and DENIED, Teradata keeps DENIED (losing the adjusted payment amount), Databricks correctly keeps ADJUSTED, and Snowflake correctly keeps ADJUSTED but incorrectly prioritizes REVERSED over DENIED.",
+        "pmpm_calculation": "Per Member Per Month (PMPM) cost calculations would differ across platforms. Claims incorrectly kept as DENIED would show $0 paid, reducing reported PMPM. This could understate medical costs by 2-5% depending on claim volume.",
+        "medical_loss_ratio": "Medical Loss Ratio (MLR) is federally regulated (ACA Section 2718). Incorrect claim status selection directly affects the numerator (incurred claims). Understating claims by keeping DENIED instead of ADJUSTED could cause an insurer to incorrectly report a lower MLR.",
+        "cms_star_ratings": "Medicare Advantage Star Ratings use claims data. Incorrect dedup could affect quality measure denominators and rates.",
+        "example_scenario": "Claim C-1001 exists as: PAID ($500), then ADJUSTED ($450), then DENIED ($0). Correct output: ADJUSTED at $450 (latest valid adjudication). Teradata output: DENIED at $0 (wrong). Snowflake output: ADJUSTED at $450 (correct). Net variance: $450 per affected claim."
+      },
+      "compliance_risk": {
+        "regulation": "CMS Claims Processing Manual, Chapter 1, Section 80 - Claim adjustment hierarchy",
+        "risk_level": "HIGH",
+        "explanation": "CMS requires that adjusted claims take precedence over denied claims when both exist for the same original claim. The Teradata implementation violates this by prioritizing DENIED over ADJUSTED. This could lead to incorrect reporting on CMS mandated reports (e.g., Medicare Cost Report, MLR filing).",
+        "potential_penalty": "CMS can impose civil monetary penalties for incorrect claims reporting. State insurance departments may also flag MLR discrepancies during examinations."
+      },
+      "resolution": {
+        "adopted_version": "Databricks (PAID=1, ADJUSTED=2, DENIED=3, REVERSED=4)",
+        "rationale": "This is the correct CMS-standard priority order. Paid claims are final adjudications, Adjusted claims are corrections to paid claims, Denied claims are rejections, and Reversed claims are voids.",
+        "migration_action": "Implement Databricks priority order in unified dbt model. Document Teradata and Snowflake deviations in migration manifest."
+      }
+    },
+    {
+      "drift_id": "DRIFT-002",
+      "title": "Encounter Grouping Algorithm",
+      "severity": "HIGH",
+      "business_impact": {
+        "encounter_counts": "Teradata's naive GROUP BY produces inflated encounter counts because it treats overlapping claims as separate encounters. A member with 3 overlapping claims (Jan 5-10, Jan 8-12, Jan 9-15) would be counted as 3 encounters on Teradata but correctly as 1 encounter on Databricks/Snowflake.",
+        "readmission_rates": "30-day readmission rates (a CMS quality measure) would be artificially inflated on Teradata because what should be a single continuous stay appears as multiple discrete encounters.",
+        "cost_per_encounter": "Average cost per encounter would be understated on Teradata (total cost spread across more encounters). This affects per-encounter benchmarking and provider performance evaluation.",
+        "alos": "Average Length of Stay (ALOS) would be understated on Teradata because encounters that should span multiple days are split into shorter fragments.",
+        "example_scenario": "Member M-2001 has: Claim A (Jan 5-10, $1000), Claim B (Jan 8-12, $500), Claim C (Jan 11-15, $800). Correct: 1 encounter, Jan 5-15, $2300, LOS=10 days. Teradata: 3 encounters with average LOS=5 days and average cost=$767."
+      },
+      "compliance_risk": {
+        "regulation": "CMS Inpatient Quality Reporting (IQR) Program, AHRQ Patient Safety Indicators",
+        "risk_level": "MEDIUM",
+        "explanation": "Incorrect encounter grouping can affect quality measure calculations submitted to CMS. While the grouping algorithm itself is not regulated, the quality measures built on top of encounters (readmission rates, complications) are used for value-based payment adjustments.",
+        "potential_penalty": "Incorrect quality measure reporting can result in reduced Medicare reimbursement rates under the Hospital Value-Based Purchasing (VBP) program."
+      },
+      "resolution": {
+        "adopted_version": "Databricks/Snowflake (gap-and-island overlap detection)",
+        "rationale": "Proper overlap detection correctly identifies when service date ranges overlap and merges them into single encounters. This produces accurate encounter counts, LOS, and cost metrics.",
+        "migration_action": "Implement gap-and-island algorithm in unified dbt model using Snowflake-compatible window functions. Document Teradata naive approach as deprecated."
+      }
+    },
+    {
+      "drift_id": "DRIFT-003",
+      "title": "Diagnosis Code Storage Structure",
+      "severity": "MEDIUM",
+      "business_impact": {
+        "data_completeness": "Snowflake's 10 individual columns truncate claims with >10 diagnosis codes (though VARIANT retains all). Teradata supports 25. Databricks ARRAY is unlimited. Claims with 11-25 diagnosis codes would lose data in Snowflake individual columns.",
+        "query_compatibility": "Different storage structures require different query patterns. Code written for one platform cannot be directly reused on another without rewriting.",
+        "analytics_impact": "Diagnosis-based analytics (risk adjustment, HCC coding, quality measures) depend on complete diagnosis code capture. Truncation at 10 codes could miss secondary conditions that affect risk scores.",
+        "example_scenario": "A complex inpatient claim with 18 diagnosis codes: Teradata stores all 18 in columns 1-18. Databricks stores all 18 in array. Snowflake stores 10 in individual columns and all 18 in VARIANT. Direct column queries on Snowflake miss codes 11-18."
+      },
+      "compliance_risk": {
+        "regulation": "CMS-1500/UB-04 claim forms support up to 25 diagnosis codes",
+        "risk_level": "LOW",
+        "explanation": "While CMS forms support 25 codes, most analytical use cases focus on the primary and secondary diagnoses (positions 1-5). The risk is primarily in HCC risk adjustment where additional diagnosis codes can affect risk scores.",
+        "potential_penalty": "None directly, but incomplete diagnosis capture could lead to understated risk scores and reduced Medicare Advantage capitation payments."
+      },
+      "resolution": {
+        "adopted_version": "Unified approach: Store as VARIANT/ARRAY for completeness + 25 individual columns for Tuva compatibility",
+        "rationale": "The Tuva input layer expects individual columns (diagnosis_code_1 through diagnosis_code_25). The unified model will maintain both structures: a VARIANT array for unlimited storage and 25 individual columns populated from the array for backward compatibility.",
+        "migration_action": "Create dbt macro to unpack ARRAY/VARIANT into 25 individual columns. Populate from Teradata columns directly, from Databricks array via LATERAL FLATTEN, from Snowflake hybrid via COALESCE of VARIANT and individual columns."
+      }
+    },
+    {
+      "drift_id": "DRIFT-004",
+      "title": "PHI Masking Pipeline Stage",
+      "severity": "HIGH",
+      "business_impact": {
+        "data_security": "Teradata's post-mart masking leaves unmasked PHI in the warehouse layer (CLAIMS_DWH). Any user with DWH read access sees real SSNs, names, dates of birth. This is a HIPAA violation risk.",
+        "data_utility": "Databricks' irreversible SHA-256 hashing at staging permanently destroys the original values. If legitimate re-identification is needed (e.g., member outreach, fraud investigation), the original data cannot be recovered from staging/warehouse layers.",
+        "audit_trail": "Snowflake's dynamic masking provides the best audit trail since masking is role-based and logged. Teradata has no masking audit. Databricks has no way to know what the original value was."
+      },
+      "compliance_risk": {
+        "regulation": "HIPAA Privacy Rule (45 CFR 164.502-514), HIPAA Security Rule (45 CFR 164.312)",
+        "risk_level": "HIGH",
+        "explanation": "The Teradata approach violates the HIPAA minimum necessary standard (45 CFR 164.502(b)) by exposing PHI to all users with DWH access, regardless of whether they need it for their job function. HIPAA requires access controls commensurate with the sensitivity of the data.",
+        "potential_penalty": "HIPAA violations can result in penalties ranging from $100 to $50,000 per violation, up to $1.5 million per year per violation category. Willful neglect penalties are even higher."
+      },
+      "resolution": {
+        "adopted_version": "Snowflake Dynamic Data Masking (policy-based)",
+        "rationale": "Dynamic masking provides the best balance of security and utility. PHI is protected at the column level with role-based access. Privileged roles (ETL, data stewards) see real data when needed. Reporting roles see masked data. No data is permanently destroyed.",
+        "migration_action": "Implement Snowflake masking policies in unified model. Apply policies to all PHI columns in RAW and STAGING layers. Create role hierarchy: CLAIMS_ETL_ROLE (full access), CLAIMS_ANALYST_ROLE (masked PHI), CLAIMS_REPORTING_ROLE (masked PHI + aggregates only)."
+      }
+    },
+    {
+      "drift_id": "DRIFT-005",
+      "title": "Member Eligibility Dedup Sort Order",
+      "severity": "LOW",
+      "business_impact": {
+        "data_quality": "When two eligibility records have the same start date but different load timestamps, Snowflake may keep a different record than Teradata/Databricks. In practice, this affects <0.1% of members and the business impact is negligible since both records represent valid eligibility.",
+        "analytics_impact": "Minimal. The retained record would have the same enrollment period and plan details. Only metadata fields (source_system, load_timestamp) might differ."
+      },
+      "compliance_risk": {
+        "regulation": "None directly applicable",
+        "risk_level": "LOW",
+        "explanation": "No regulatory requirement specifies how to break ties in eligibility deduplication. Both approaches are valid.",
+        "potential_penalty": "None"
+      },
+      "resolution": {
+        "adopted_version": "Teradata/Databricks approach (sort by enrollment date first, then load timestamp)",
+        "rationale": "Sorting by business date first (enrollment_start_date) is more semantically meaningful than load timestamp. The most recent enrollment period should take precedence regardless of when it was loaded.",
+        "migration_action": "Standardize dedup ORDER BY to: enrollment_start_date DESC, load_timestamp DESC across all staging models."
+      }
+    },
+    {
+      "drift_id": "DRIFT-006",
+      "title": "Financial Amount Data Types (DOUBLE vs DECIMAL)",
+      "severity": "MEDIUM",
+      "business_impact": {
+        "rounding_errors": "Databricks DOUBLE type introduces floating point rounding. SUM of 1 million claims with paid_amount could differ by $0.01-$10.00 between Databricks and Teradata/Snowflake. For large payers processing billions in claims annually, cumulative rounding could reach thousands of dollars.",
+        "reconciliation": "Cross-platform financial reconciliation would always show small variances due to floating point arithmetic, making it impossible to achieve exact penny-level matching between Databricks and the other platforms.",
+        "regulatory_reporting": "Financial regulatory reports (MLR, Medicare Cost Report) require exact amounts. Floating point imprecision could cause rounding differences that require manual adjustment."
+      },
+      "compliance_risk": {
+        "regulation": "GAAP/IFRS accounting standards, CMS Medicare Cost Report instructions",
+        "risk_level": "LOW",
+        "explanation": "While the variance is small, financial reporting standards require consistent and reproducible arithmetic. GAAP requires that financial calculations be deterministic.",
+        "potential_penalty": "No direct penalty, but audit findings for inconsistent financial reporting."
+      },
+      "resolution": {
+        "adopted_version": "Teradata/Snowflake (NUMBER/DECIMAL with fixed precision)",
+        "rationale": "Financial amounts must use fixed-precision arithmetic to ensure exact, reproducible calculations. NUMBER(18,2) provides exactly 2 decimal places with no floating point rounding.",
+        "migration_action": "Cast all financial columns to NUMBER(18,2) in dbt staging models. Add dbt test to validate no precision loss during casting."
+      }
+    },
+    {
+      "drift_id": "DRIFT-007",
+      "title": "Claim Type Value Encoding",
+      "severity": "LOW",
+      "business_impact": {
+        "analytics_impact": "Without normalization, claim type grouping produces different categories across platforms. Teradata/Snowflake use single-char codes (I/P/O), Databricks uses full strings (INSTITUTIONAL/PROFESSIONAL/OUTPATIENT). Cross-platform reconciliation requires mapping.",
+        "reporting_impact": "Dashboards and reports built on one platform's encoding would break on another."
+      },
+      "compliance_risk": {
+        "regulation": "CMS claim type codes (institutional=I, professional=P)",
+        "risk_level": "LOW",
+        "explanation": "CMS uses single-character codes. The Tuva model uses descriptive strings. Both are acceptable as long as the mapping is consistent.",
+        "potential_penalty": "None"
+      },
+      "resolution": {
+        "adopted_version": "Tuva standard encoding (lowercase descriptive: 'institutional', 'professional')",
+        "rationale": "Align with Tuva data model conventions for consistency with the broader healthcare data community.",
+        "migration_action": "Create CASE mapping in dbt staging models to normalize all platform-specific codes to Tuva standard values."
+      }
+    }
+  ],
+  "executive_summary": {
+    "total_drift_findings": 7,
+    "critical_risks": 1,
+    "high_risks": 2,
+    "medium_risks": 2,
+    "low_risks": 2,
+    "estimated_financial_impact": "The ADR dedup drift (DRIFT-001) is the highest-impact finding. For a health plan processing 10M claims/year with 3% ADR rate, incorrect priority ordering could misstate paid amounts by $2-5M annually. The encounter grouping drift (DRIFT-002) inflates encounter counts by an estimated 5-15% on Teradata, affecting all encounter-based analytics.",
+    "top_compliance_risks": [
+      "HIPAA violation from Teradata PHI exposure in warehouse tables (DRIFT-004)",
+      "CMS claims reporting errors from incorrect ADR priority (DRIFT-001)",
+      "Quality measure inaccuracies from inflated encounter counts (DRIFT-002)"
+    ],
+    "recommended_priority": [
+      "1. Fix ADR dedup priority (DRIFT-001) - CRITICAL financial and regulatory impact",
+      "2. Fix PHI masking strategy (DRIFT-004) - HIGH HIPAA compliance risk",
+      "3. Fix encounter grouping (DRIFT-002) - HIGH analytical accuracy impact",
+      "4. Standardize diagnosis code storage (DRIFT-003) - MEDIUM data completeness risk",
+      "5. Fix financial data types (DRIFT-006) - MEDIUM reconciliation impact",
+      "6. Standardize claim type encoding (DRIFT-007) - LOW reporting consistency",
+      "7. Standardize member dedup sort (DRIFT-005) - LOW edge case"
+    ]
+  }
+}

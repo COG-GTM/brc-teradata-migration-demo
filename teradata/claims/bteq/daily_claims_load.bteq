@@ -1,0 +1,182 @@
+/*******************************************************************************
+ * daily_claims_load.bteq
+ *
+ * Daily batch ETL orchestration script for healthcare claims processing.
+ * Calls stored procedures in sequence with error handling.
+ *
+ * Steps:
+ *   1. Pre-flight checks (verify source data)
+ *   2. ADR deduplication for medical claims
+ *   3. Pharmacy claim load
+ *   4. Encounter grouping
+ *   5. Diagnosis code flattening
+ *   6. Post-load validation
+ *
+ * Scheduled: Daily at 06:00 EST via UC4/AutoSys
+ * Dependencies: Upstream 837/835 file extracts must complete by 05:30 EST
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/claims_etl,${ETL_PASSWORD};
+
+DATABASE CLAIMS_DWH;
+
+.SET WIDTH 200
+.SET ERRORLEVEL 3807 SEVERITY 0  /* table does not exist - treat as warning */
+.SET ERRORLEVEL 3803 SEVERITY 0  /* table already exists - treat as warning */
+
+/*---------------------------------------------------------------------------
+ * Pre-flight checks
+ *---------------------------------------------------------------------------*/
+SELECT 'Claims Daily ETL started at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+/* Verify medical claims source data is available for today */
+SELECT COUNT(*) AS raw_medical_count
+FROM CLAIMS_RAW.RAW_MEDICAL_CLAIM
+WHERE load_date = CURRENT_DATE;
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+.IF ACTIVITYCOUNT = 0 THEN .GOTO NODATA
+
+/* Verify pharmacy claims source data */
+SELECT COUNT(*) AS raw_pharmacy_count
+FROM CLAIMS_RAW.RAW_PHARMACY_CLAIM
+WHERE load_date = CURRENT_DATE;
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+/* Verify member eligibility source data */
+SELECT COUNT(*) AS raw_eligibility_count
+FROM CLAIMS_RAW.RAW_MEMBER_ELIGIBILITY
+WHERE load_date = CURRENT_DATE;
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+/*---------------------------------------------------------------------------
+ * STEP 1: ADR deduplication for medical claims (all types)
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 1: sp_claims_adr_dedup started';
+CALL CLAIMS_DWH.sp_claims_adr_dedup(CURRENT_DATE, 'ALL');
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 1 complete. Rows affected: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/*---------------------------------------------------------------------------
+ * STEP 2: Pharmacy claim processing
+ * Load pharmacy claims into the fact table with ADR dedup
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 2: Pharmacy claim load started';
+
+/* Delete and reload for current date claims */
+DELETE FROM CLAIMS_DWH.FCT_PHARMACY_CLAIM
+WHERE claim_id IN (
+    SELECT claim_id
+    FROM CLAIMS_RAW.RAW_PHARMACY_CLAIM
+    WHERE load_date = CURRENT_DATE
+);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+INSERT INTO CLAIMS_DWH.FCT_PHARMACY_CLAIM (
+    claim_id, member_sk, dispensing_provider_sk, prescribing_provider_sk,
+    dispensing_date_key, ndc_code, quantity, days_supply, refill_number,
+    claim_status, paid_amount, charge_amount, allowed_amount,
+    copay, coinsurance, deductible, plan_paid, member_oop,
+    payer_id, etl_batch_id, etl_loaded_ts
+)
+SELECT
+    rx.claim_id,
+    dm.member_sk,
+    dp_disp.provider_sk,
+    dp_presc.provider_sk,
+    CAST(CAST(rx.dispensing_date AS FORMAT 'YYYYMMDD') AS INTEGER),
+    rx.ndc_code,
+    ZEROIFNULL(rx.quantity),
+    rx.days_supply,
+    rx.refill_number,
+    rx.claim_status,
+    ZEROIFNULL(rx.paid_amount),
+    ZEROIFNULL(rx.charge_amount),
+    ZEROIFNULL(rx.allowed_amount),
+    ZEROIFNULL(rx.copay),
+    ZEROIFNULL(rx.coinsurance),
+    ZEROIFNULL(rx.deductible),
+    ZEROIFNULL(rx.plan_paid),
+    ZEROIFNULL(rx.copay) + ZEROIFNULL(rx.coinsurance) + ZEROIFNULL(rx.deductible),
+    rx.payer_id,
+    CAST(CAST(CURRENT_DATE AS FORMAT 'YYYYMMDD') || '010' AS BIGINT),
+    CURRENT_TIMESTAMP(6)
+FROM CLAIMS_STG.V_PHARMACY_CLAIM_CURRENT rx
+INNER JOIN CLAIMS_DWH.DIM_MEMBER dm
+    ON rx.member_id = dm.member_id AND dm.is_current = 'Y'
+LEFT JOIN CLAIMS_DWH.DIM_PROVIDER dp_disp
+    ON rx.dispensing_npi = dp_disp.npi AND dp_disp.is_current = 'Y'
+LEFT JOIN CLAIMS_DWH.DIM_PROVIDER dp_presc
+    ON rx.prescribing_npi = dp_presc.npi AND dp_presc.is_current = 'Y'
+WHERE rx.claim_id IN (
+    SELECT claim_id
+    FROM CLAIMS_RAW.RAW_PHARMACY_CLAIM
+    WHERE load_date = CURRENT_DATE
+);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 2 complete. Rows affected: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/*---------------------------------------------------------------------------
+ * STEP 3: Encounter grouping
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 3: sp_encounter_grouping started';
+CALL CLAIMS_DWH.sp_encounter_grouping(CURRENT_DATE - 30, CURRENT_DATE);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 3 complete. Rows affected: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/*---------------------------------------------------------------------------
+ * STEP 4: Diagnosis code flattening
+ *---------------------------------------------------------------------------*/
+SELECT 'Step 4: sp_diagnosis_code_flatten started';
+CALL CLAIMS_DWH.sp_diagnosis_code_flatten(CURRENT_DATE - 30, CURRENT_DATE);
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+SELECT 'Step 4 complete. Rows affected: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+
+/*---------------------------------------------------------------------------
+ * Post-load validation
+ *---------------------------------------------------------------------------*/
+SELECT 'Validation: checking claim counts for today';
+
+SELECT
+    'Medical claims loaded today: ' || CAST(COUNT(*) AS VARCHAR(20))
+FROM CLAIMS_DWH.FCT_MEDICAL_CLAIM
+WHERE etl_loaded_ts >= CAST(CURRENT_DATE AS TIMESTAMP(6));
+
+SELECT
+    'Pharmacy claims loaded today: ' || CAST(COUNT(*) AS VARCHAR(20))
+FROM CLAIMS_DWH.FCT_PHARMACY_CLAIM
+WHERE etl_loaded_ts >= CAST(CURRENT_DATE AS TIMESTAMP(6));
+
+SELECT
+    'Encounters updated: ' || CAST(COUNT(*) AS VARCHAR(20))
+FROM CLAIMS_DWH.FCT_ENCOUNTER
+WHERE etl_loaded_ts >= CAST(CURRENT_DATE AS TIMESTAMP(6));
+
+/* Check for orphaned claims (no matching member) */
+SELECT
+    'WARNING orphaned medical claims: ' || CAST(COUNT(*) AS VARCHAR(20))
+FROM CLAIMS_RAW.RAW_MEDICAL_CLAIM raw
+LEFT JOIN CLAIMS_DWH.DIM_MEMBER dm
+    ON raw.member_id = dm.member_id AND dm.is_current = 'Y'
+WHERE raw.load_date = CURRENT_DATE
+  AND dm.member_sk IS NULL;
+
+SELECT 'Claims Daily ETL completed successfully at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.GOTO FINISH
+
+/*---------------------------------------------------------------------------
+ * Error / no-data handlers
+ *---------------------------------------------------------------------------*/
+.LABEL NODATA
+SELECT 'WARNING: No source claims data found for ' || CAST(CURRENT_DATE AS VARCHAR(10));
+SELECT 'Claims Daily ETL skipped - no data available';
+.GOTO FINISH
+
+.LABEL ERRORHANDLER
+SELECT 'ERROR: Claims Daily ETL failed at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+SELECT 'Last ERRORCODE: ' || CAST(ERRORCODE AS VARCHAR(10));
+.QUIT 12
+
+.LABEL FINISH
+.LOGOFF;
+.QUIT 0;

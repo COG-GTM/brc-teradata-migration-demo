@@ -1,0 +1,147 @@
+# Source definitions for all three legacy platforms
+# Each platform's raw tables are defined as separate sources.
+# The staging models map these sources to the unified Tuva input layer.
+
+version: 2
+
+sources:
+  # =========================================================================
+  # Teradata Legacy Sources (migrated to Snowflake raw tables)
+  # =========================================================================
+  - name: teradata_raw
+    description: >
+      Legacy Teradata claims data migrated to Snowflake raw tables.
+      Original platform: Teradata (CLAIMS_RAW database).
+      Key drift: 25 individual diagnosis code columns, ADR priority bug
+      (DENIED before ADJUSTED), naive encounter grouping.
+    database: CLAIMS_DW
+    schema: TERADATA_RAW
+    tables:
+      - name: raw_member_eligibility
+        description: "Member enrollment/eligibility from Teradata. Originally a SET table with RANGE_N yearly PPI on enrollment_start_date."
+        columns:
+          - name: member_id
+            description: "Member identifier (PRIMARY INDEX in Teradata)"
+            tests:
+              - not_null
+          - name: enrollment_start_date
+            tests:
+              - not_null
+
+      - name: raw_medical_claim
+        description: >
+          Medical claims from Teradata. Originally a MULTISET table with
+          RANGE_N monthly PPI on service_date_from. Contains 25 individual
+          diagnosis code columns (icd_diagnosis_code_1..25).
+        columns:
+          - name: claim_id
+            tests:
+              - not_null
+          - name: claim_line_number
+            tests:
+              - not_null
+          - name: member_id
+            tests:
+              - not_null
+          - name: service_date_from
+            tests:
+              - not_null
+
+      - name: raw_pharmacy_claim
+        description: "Pharmacy claims from Teradata. Originally a MULTISET table with RANGE_N monthly PPI on dispensing_date."
+        columns:
+          - name: claim_id
+            tests:
+              - not_null
+          - name: member_id
+            tests:
+              - not_null
+
+  # =========================================================================
+  # Databricks Legacy Sources (migrated to Snowflake raw tables)
+  # =========================================================================
+  - name: databricks_raw
+    description: >
+      Legacy Databricks Delta Lake claims data migrated to Snowflake raw tables.
+      Original platform: Databricks (claims_raw schema).
+      Key drift: ARRAY<STRING> diagnosis codes, patient_id instead of member_id,
+      DOUBLE for financial amounts, PHI masking at staging layer.
+    database: CLAIMS_DW
+    schema: DATABRICKS_RAW
+    tables:
+      - name: raw_member_eligibility
+        description: "Member enrollment from Databricks. Delta table with Auto Loader ingestion."
+        columns:
+          - name: member_id
+            description: "Originally 'member_id' in Databricks (unlike patient_id in claims)"
+            tests:
+              - not_null
+
+      - name: raw_medical_claim
+        description: >
+          Medical claims from Databricks. Delta table with diagnosis_codes
+          as ARRAY<STRING> (migrated to VARIANT in Snowflake).
+          Uses patient_id instead of member_id.
+        columns:
+          - name: claim_id
+            tests:
+              - not_null
+          - name: patient_id
+            description: "Databricks uses patient_id instead of member_id"
+            tests:
+              - not_null
+
+      - name: raw_pharmacy_claim
+        description: "Pharmacy claims from Databricks Delta Lake."
+        columns:
+          - name: claim_id
+            tests:
+              - not_null
+
+  # =========================================================================
+  # Snowflake Native Sources
+  # =========================================================================
+  - name: snowflake_raw
+    description: >
+      Native Snowflake claims data in CLAIMS_DW.RAW schema.
+      Key features: VARIANT + 10 individual diagnosis code columns (hybrid),
+      Dynamic Data Masking policies, CHANGE_TRACKING enabled,
+      net_paid_amount column (unique to Snowflake).
+    database: CLAIMS_DW
+    schema: RAW
+    tables:
+      - name: raw_member_eligibility
+        description: "Member enrollment with Dynamic Data Masking on PHI columns."
+        columns:
+          - name: member_id
+            tests:
+              - not_null
+          - name: eligibility_start_date
+            tests:
+              - not_null
+
+      - name: raw_medical_claim
+        description: >
+          Medical claims with hybrid diagnosis code storage: VARIANT JSON
+          array + 10 individual VARCHAR columns. ADR priority:
+          PAID=1, ADJUSTED=2, REVERSED=3, DENIED=4 (Snowflake-specific drift).
+        columns:
+          - name: claim_id
+            tests:
+              - not_null
+          - name: claim_line_number
+            tests:
+              - not_null
+          - name: member_id
+            tests:
+              - not_null
+
+      - name: raw_pharmacy_claim
+        description: "Pharmacy claims with Snowpipe ingestion."
+        columns:
+          - name: claim_id
+            tests:
+              - not_null
+          - name: member_id
+            tests:
+              - not_null

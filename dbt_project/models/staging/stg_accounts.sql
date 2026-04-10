@@ -30,8 +30,8 @@ cleaned as (
 
         -- Derived: days since account opened
         -- Teradata: CURRENT_DATE - open_date (returns integer)
-        -- Snowflake/Databricks: datediff
-        datediff('day', open_date, current_date) as days_since_opening
+        -- dbt cross-database macro for compatibility
+        {{ datediff('open_date', 'current_date', 'day') }} as days_since_opening
 
     from source
     where upper(trim(status)) != 'CLOSED'

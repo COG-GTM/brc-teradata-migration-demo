@@ -1,0 +1,5 @@
+# Tuva Health - open-source healthcare claims data model
+# https://github.com/tuva-health/tuva
+packages:
+  - package: tuva-health/tuva
+    version: [">=0.9.0", "<1.0.0"]
