@@ -1,0 +1,193 @@
+{
+  "name": "Healthcare Claims - Daily Pipeline",
+  "description": "Daily claims processing pipeline: ingestion, ADR deduplication, PHI masking, encounter grouping, fact population, and mart refresh.",
+  "tags": {
+    "team": "data-engineering",
+    "domain": "healthcare-claims",
+    "environment": "production",
+    "schedule": "daily"
+  },
+  "schedule": {
+    "quartz_cron_expression": "0 0 6 ? * * *",
+    "timezone_id": "America/New_York",
+    "pause_status": "UNPAUSED"
+  },
+  "max_concurrent_runs": 1,
+  "timeout_seconds": 14400,
+  "email_notifications": {
+    "on_start": [],
+    "on_success": [
+      "claims-pipeline-alerts@example.com"
+    ],
+    "on_failure": [
+      "claims-pipeline-alerts@example.com",
+      "oncall-data-engineering@example.com"
+    ],
+    "no_alert_for_skipped_runs": true
+  },
+  "webhook_notifications": {
+    "on_failure": [
+      {
+        "id": "slack-webhook-claims-alerts"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "task_key": "01_claims_ingestion",
+      "description": "Ingest raw claims files via Auto Loader into Delta tables",
+      "notebook_task": {
+        "notebook_path": "/Repos/production/healthcare-claims/databricks/notebooks/01_claims_ingestion",
+        "base_parameters": {
+          "source_base_path": "s3://healthcare-claims-landing/daily/",
+          "file_format": "parquet",
+          "environment": "prod"
+        },
+        "source": "WORKSPACE"
+      },
+      "job_cluster_key": "claims_etl_cluster",
+      "timeout_seconds": 3600,
+      "retry_on_timeout": false,
+      "max_retries": 2,
+      "min_retry_interval_millis": 60000
+    },
+    {
+      "task_key": "02_adr_deduplication",
+      "description": "ADR deduplication: PAID > ADJUSTED > DENIED > REVERSED (CMS priority)",
+      "depends_on": [
+        {
+          "task_key": "01_claims_ingestion"
+        }
+      ],
+      "notebook_task": {
+        "notebook_path": "/Repos/production/healthcare-claims/databricks/notebooks/02_adr_deduplication",
+        "source": "WORKSPACE"
+      },
+      "job_cluster_key": "claims_etl_cluster",
+      "timeout_seconds": 3600,
+      "max_retries": 1,
+      "min_retry_interval_millis": 120000
+    },
+    {
+      "task_key": "03_phi_masking",
+      "description": "Apply PHI masking at staging layer (SHA-256 names, DOB, ZIP truncation)",
+      "depends_on": [
+        {
+          "task_key": "02_adr_deduplication"
+        }
+      ],
+      "notebook_task": {
+        "notebook_path": "/Repos/production/healthcare-claims/databricks/notebooks/05_phi_masking",
+        "source": "WORKSPACE"
+      },
+      "job_cluster_key": "claims_etl_cluster",
+      "timeout_seconds": 1800,
+      "max_retries": 1,
+      "min_retry_interval_millis": 60000
+    },
+    {
+      "task_key": "04_encounter_grouping",
+      "description": "Group overlapping claims into encounters using gap-and-island algorithm",
+      "depends_on": [
+        {
+          "task_key": "03_phi_masking"
+        }
+      ],
+      "notebook_task": {
+        "notebook_path": "/Repos/production/healthcare-claims/databricks/notebooks/03_encounter_grouping",
+        "source": "WORKSPACE"
+      },
+      "job_cluster_key": "claims_etl_cluster",
+      "timeout_seconds": 3600,
+      "max_retries": 1,
+      "min_retry_interval_millis": 120000
+    },
+    {
+      "task_key": "05_diagnosis_processing",
+      "description": "Explode diagnosis code arrays and map to ICD-10 descriptions",
+      "depends_on": [
+        {
+          "task_key": "03_phi_masking"
+        }
+      ],
+      "notebook_task": {
+        "notebook_path": "/Repos/production/healthcare-claims/databricks/notebooks/04_diagnosis_code_processing",
+        "source": "WORKSPACE"
+      },
+      "job_cluster_key": "claims_etl_cluster",
+      "timeout_seconds": 1800,
+      "max_retries": 1,
+      "min_retry_interval_millis": 60000
+    },
+    {
+      "task_key": "06_daily_pipeline_sp",
+      "description": "Run daily claims pipeline stored procedure for fact/dimension updates",
+      "depends_on": [
+        {
+          "task_key": "04_encounter_grouping"
+        },
+        {
+          "task_key": "05_diagnosis_processing"
+        }
+      ],
+      "sql_task": {
+        "query": "CALL claims_warehouse.sp_daily_claims_pipeline(CURRENT_DATE());",
+        "warehouse_id": "claims_sql_warehouse"
+      },
+      "timeout_seconds": 3600,
+      "max_retries": 1,
+      "min_retry_interval_millis": 120000
+    }
+  ],
+  "job_clusters": [
+    {
+      "job_cluster_key": "claims_etl_cluster",
+      "new_cluster": {
+        "spark_version": "14.3.x-scala2.12",
+        "node_type_id": "i3.xlarge",
+        "num_workers": 4,
+        "autoscale": {
+          "min_workers": 2,
+          "max_workers": 8
+        },
+        "spark_conf": {
+          "spark.databricks.delta.optimizeWrite.enabled": "true",
+          "spark.databricks.delta.autoCompact.enabled": "true",
+          "spark.sql.adaptive.enabled": "true",
+          "spark.sql.adaptive.coalescePartitions.enabled": "true",
+          "spark.databricks.delta.schema.autoMerge.enabled": "true"
+        },
+        "aws_attributes": {
+          "first_on_demand": 1,
+          "availability": "SPOT_WITH_FALLBACK",
+          "zone_id": "auto",
+          "spot_bid_price_percent": 100
+        },
+        "custom_tags": {
+          "team": "data-engineering",
+          "project": "healthcare-claims",
+          "cost_center": "DE-001"
+        },
+        "enable_elastic_disk": true,
+        "data_security_mode": "SINGLE_USER",
+        "runtime_engine": "PHOTON"
+      }
+    }
+  ],
+  "queue": {
+    "enabled": true
+  },
+  "run_as": {
+    "service_principal_name": "healthcare-claims-pipeline-sp"
+  },
+  "access_control_list": [
+    {
+      "group_name": "data-engineering",
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "group_name": "data-analysts",
+      "permission_level": "CAN_VIEW"
+    }
+  ]
+}
