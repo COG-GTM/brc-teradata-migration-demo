@@ -1,0 +1,208 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-10",
+    "description": "Phase 9: Cross-platform lineage map - every object on every legacy platform mapped to its unified equivalent"
+  },
+  "lineage": {
+    "raw_layer": {
+      "unified_target": "CLAIMS_DW.RAW.*",
+      "ingestion": "orchestration/01_daily_claims_pipeline.sql (Snowpipe + COPY INTO)",
+      "sources": {
+        "teradata": {
+          "database": "CLAIMS_RAW",
+          "tables": ["RAW_MEMBER_ELIGIBILITY", "RAW_MEDICAL_CLAIM", "RAW_PHARMACY_CLAIM"],
+          "ingestion_method": "BTEQ .IMPORT / FastLoad",
+          "source_files": ["teradata/claims/bteq/daily_claims_load.bteq", "teradata/claims/fastload/claims_file_load.fl"]
+        },
+        "databricks": {
+          "database": "claims_raw",
+          "tables": ["raw_member_eligibility", "raw_medical_claim", "raw_pharmacy_claim"],
+          "ingestion_method": "Auto Loader (cloudFiles)",
+          "source_files": ["databricks/notebooks/01_claims_ingestion.py"]
+        },
+        "snowflake": {
+          "database": "CLAIMS_DW",
+          "schema": "RAW",
+          "tables": ["RAW_MEMBER_ELIGIBILITY", "RAW_MEDICAL_CLAIM", "RAW_PHARMACY_CLAIM"],
+          "ingestion_method": "Snowpipe + Tasks",
+          "source_files": ["snowflake/tasks/daily_claims_pipeline_task.sql"]
+        }
+      }
+    },
+    "staging_layer": {
+      "unified_target": "healthcare_dbt/models/staging/",
+      "models": [
+        {
+          "model": "stg_teradata__eligibility",
+          "source": "teradata.CLAIMS_RAW.RAW_MEMBER_ELIGIBILITY",
+          "key_transforms": ["member_id → person_id", "CHAR → VARCHAR", "RANGE_N PPI removed"]
+        },
+        {
+          "model": "stg_teradata__medical_claim",
+          "source": "teradata.CLAIMS_RAW.RAW_MEDICAL_CLAIM",
+          "key_transforms": ["service_date_from → claim_start_date", "25 diag columns preserved", "claim_type I/P/O normalized"]
+        },
+        {
+          "model": "stg_teradata__pharmacy_claim",
+          "source": "teradata.CLAIMS_RAW.RAW_PHARMACY_CLAIM",
+          "key_transforms": ["member_id → person_id", "SMALLINT → INTEGER"]
+        },
+        {
+          "model": "stg_databricks__eligibility",
+          "source": "databricks.claims_raw.raw_member_eligibility",
+          "key_transforms": ["coverage_start/end → enrollment_start/end", "STRING → VARCHAR"]
+        },
+        {
+          "model": "stg_databricks__medical_claim",
+          "source": "databricks.claims_raw.raw_medical_claim",
+          "key_transforms": ["patient_id → person_id", "ARRAY<STRING> → 25 columns", "DOUBLE → NUMBER(18,2)"]
+        },
+        {
+          "model": "stg_databricks__pharmacy_claim",
+          "source": "databricks.claims_raw.raw_pharmacy_claim",
+          "key_transforms": ["patient_id → person_id", "fill_date → dispensing_date"]
+        },
+        {
+          "model": "stg_snowflake__eligibility",
+          "source": "snowflake.CLAIMS_DW.RAW.RAW_MEMBER_ELIGIBILITY",
+          "key_transforms": ["eligibility_start/end → enrollment_start/end", "plan_code → plan"]
+        },
+        {
+          "model": "stg_snowflake__medical_claim",
+          "source": "snowflake.CLAIMS_DW.RAW.RAW_MEDICAL_CLAIM",
+          "key_transforms": ["Hybrid VARIANT+columns → 25 columns", "start/end_date → claim_start/end_date", "status_code → claim_status"]
+        },
+        {
+          "model": "stg_snowflake__pharmacy_claim",
+          "source": "snowflake.CLAIMS_DW.RAW.RAW_PHARMACY_CLAIM",
+          "key_transforms": ["fill_date → dispensing_date", "status_code → claim_status"]
+        }
+      ]
+    },
+    "intermediate_layer": {
+      "unified_target": "healthcare_dbt/models/intermediate/",
+      "models": [
+        {
+          "model": "int_medical_claim_adr_deduped",
+          "sources": ["stg_teradata__medical_claim", "stg_databricks__medical_claim", "stg_snowflake__medical_claim"],
+          "replaces": ["teradata.sp_claims_adr_dedup", "databricks.02_adr_deduplication.py", "snowflake.SP_CLAIMS_ADR_DEDUP"],
+          "drift_resolved": ["DRIFT-001 (ADR priority)", "DRIFT-007 (claim type encoding)"]
+        },
+        {
+          "model": "int_pharmacy_claim_adr_deduped",
+          "sources": ["stg_teradata__pharmacy_claim", "stg_databricks__pharmacy_claim", "stg_snowflake__pharmacy_claim"],
+          "replaces": ["teradata.sp_claims_adr_dedup (pharmacy section)", "databricks.02_adr_deduplication.py (pharmacy)", "snowflake.SP_CLAIMS_ADR_DEDUP (pharmacy)"],
+          "drift_resolved": ["DRIFT-001 (ADR priority)"]
+        },
+        {
+          "model": "int_encounter_grouped",
+          "sources": ["int_medical_claim_adr_deduped"],
+          "replaces": ["teradata.sp_encounter_grouping", "databricks.03_encounter_grouping.py", "snowflake.SP_ENCOUNTER_GROUPING"],
+          "drift_resolved": ["DRIFT-002 (encounter grouping algorithm)"]
+        },
+        {
+          "model": "int_eligibility_deduped",
+          "sources": ["stg_teradata__eligibility", "stg_databricks__eligibility", "stg_snowflake__eligibility"],
+          "replaces": ["teradata.V_MEMBER_LATEST", "databricks member dedup logic", "snowflake member dedup logic"],
+          "drift_resolved": ["DRIFT-005 (member dedup sort order)"]
+        },
+        {
+          "model": "int_member_month_enrollment",
+          "sources": ["int_eligibility_deduped"],
+          "replaces": ["teradata.sp_member_month_enrollment (EXPAND ON)", "databricks member month logic", "snowflake member month logic"],
+          "drift_resolved": []
+        }
+      ]
+    },
+    "mart_layer": {
+      "unified_target": "healthcare_dbt/models/marts/",
+      "models": [
+        {
+          "model": "mart_claim_summary",
+          "sources": ["int_medical_claim_adr_deduped", "int_pharmacy_claim_adr_deduped"],
+          "purpose": "Executive dashboard - claim counts, financial totals by type/status/month"
+        },
+        {
+          "model": "mart_encounter_summary",
+          "sources": ["int_encounter_grouped"],
+          "purpose": "Utilization analytics - encounter counts, LOS, costs by type/month"
+        },
+        {
+          "model": "mart_member_months",
+          "sources": ["int_member_month_enrollment", "int_medical_claim_adr_deduped", "int_pharmacy_claim_adr_deduped", "int_encounter_grouped"],
+          "purpose": "PMPM metrics - per member per month medical/pharmacy/total costs"
+        }
+      ]
+    },
+    "tuva_input_layer": {
+      "unified_target": "healthcare_dbt/models/migration/",
+      "models": [
+        {
+          "model": "tuva_input__eligibility",
+          "sources": ["int_eligibility_deduped"],
+          "tuva_target": "input_layer.eligibility"
+        },
+        {
+          "model": "tuva_input__medical_claim",
+          "sources": ["int_medical_claim_adr_deduped"],
+          "tuva_target": "input_layer.medical_claim"
+        },
+        {
+          "model": "tuva_input__pharmacy_claim",
+          "sources": ["int_pharmacy_claim_adr_deduped"],
+          "tuva_target": "input_layer.pharmacy_claim"
+        }
+      ]
+    },
+    "orchestration_layer": {
+      "unified_target": "orchestration/",
+      "tasks": [
+        {
+          "task": "TASK_RAW_INGESTION",
+          "schedule": "Daily 6 AM ET",
+          "replaces": ["teradata.daily_claims_load.bteq", "databricks.01_claims_ingestion.py", "snowflake.daily_claims_pipeline_task"]
+        },
+        {
+          "task": "TASK_STAGING_REFRESH",
+          "trigger": "AFTER TASK_RAW_INGESTION",
+          "replaces": ["teradata staging view refresh", "databricks silver layer notebook"]
+        },
+        {
+          "task": "TASK_ADR_DEDUP",
+          "trigger": "AFTER TASK_STAGING_REFRESH",
+          "replaces": ["teradata.sp_claims_adr_dedup", "databricks.02_adr_deduplication.py", "snowflake.SP_CLAIMS_ADR_DEDUP"]
+        },
+        {
+          "task": "TASK_ENCOUNTER_GROUPING",
+          "trigger": "AFTER TASK_ADR_DEDUP",
+          "replaces": ["teradata.sp_encounter_grouping", "databricks.03_encounter_grouping.py", "snowflake.SP_ENCOUNTER_GROUPING"]
+        },
+        {
+          "task": "TASK_MARTS_REFRESH",
+          "trigger": "AFTER TASK_ENCOUNTER_GROUPING",
+          "replaces": ["all platform mart layer updates"]
+        },
+        {
+          "task": "TASK_VALIDATION",
+          "trigger": "AFTER TASK_MARTS_REFRESH",
+          "replaces": ["manual QA checks across platforms"]
+        },
+        {
+          "task": "TASK_MONTHLY_ENROLLMENT",
+          "schedule": "1st of month 2 AM ET",
+          "replaces": ["teradata.monthly_enrollment_refresh.bteq", "databricks monthly job", "snowflake monthly task"]
+        },
+        {
+          "task": "TASK_QUARTERLY_QUALITY",
+          "schedule": "1st of Jan/Apr/Jul/Oct 3 AM ET",
+          "replaces": ["teradata.quarterly_quality_measures.bteq"]
+        }
+      ],
+      "pipes": [
+        {"pipe": "PIPE_MEDICAL_CLAIMS", "replaces": ["BTEQ .IMPORT", "Auto Loader"]},
+        {"pipe": "PIPE_PHARMACY_CLAIMS", "replaces": ["BTEQ .IMPORT", "Auto Loader"]},
+        {"pipe": "PIPE_ELIGIBILITY", "replaces": ["BTEQ .IMPORT", "Auto Loader"]}
+      ]
+    }
+  }
+}

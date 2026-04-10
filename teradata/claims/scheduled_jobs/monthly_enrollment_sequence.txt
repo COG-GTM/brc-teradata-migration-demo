@@ -1,0 +1,66 @@
+################################################################################
+# Monthly Enrollment Sequence - Healthcare Claims Data Warehouse
+#
+# Scheduled via UC4/AutoSys/Control-M on 1st business day of month at 07:00 EST
+# Dependencies: All daily ETL jobs for prior month must be complete
+#
+# SLA: All jobs must complete by 12:00 EST for month-end reporting
+################################################################################
+
+# Job Name                              | Dependency                  | Schedule         | Description
+# --------------------------------------|-----------------------------|-----------------|-----------------------------------------
+# CLM_MONTHLY_001_PREFLIGHT             | ALL_DAILY_JOBS_COMPLETE     | 07:00 EST       | Verify prior month data completeness
+# CLM_MONTHLY_002_MEMBER_SCD2           | CLM_MONTHLY_001             | 07:15 EST       | Member dimension SCD Type 2 updates
+# CLM_MONTHLY_003_PROVIDER_REFRESH      | CLM_MONTHLY_001             | 07:15 EST       | Provider dimension refresh from NPPES
+# CLM_MONTHLY_004_MEMBER_MONTHS         | CLM_MONTHLY_002             | 08:00 EST       | Member-month enrollment (sp_member_month_enrollment)
+# CLM_MONTHLY_005_CLAIM_SUMMARY         | CLM_MONTHLY_004             | 09:00 EST       | Claim summary mart refresh
+# CLM_MONTHLY_006_ENCOUNTER_SUMMARY     | CLM_MONTHLY_004             | 09:00 EST       | Encounter summary mart refresh
+# CLM_MONTHLY_007_PHI_MASKING           | CLM_MONTHLY_002             | 09:30 EST       | PHI masking view refresh (sp_phi_masking)
+# CLM_MONTHLY_008_STATS_COLLECTION      | CLM_MONTHLY_005,006,007     | 10:00 EST       | Collect statistics on all mart tables
+# CLM_MONTHLY_009_EXPORT_MEMBER_MONTHS  | CLM_MONTHLY_005             | 10:00 EST       | TPT export member months for actuarial
+# CLM_MONTHLY_010_VALIDATION            | CLM_MONTHLY_008,009         | 10:30 EST       | Month-end validation and reconciliation
+# CLM_MONTHLY_011_NOTIFICATION          | CLM_MONTHLY_010             | 11:00 EST       | Email notification with summary stats
+
+################################################################################
+# Quarterly Add-On (runs in months 1, 4, 7, 10):
+#
+# CLM_QUARTERLY_001_QUALITY_MEASURES    | CLM_MONTHLY_004             | 11:00 EST       | HEDIS quality measures (quarterly_quality_measures.bteq)
+# CLM_QUARTERLY_002_STAR_RATINGS        | CLM_QUARTERLY_001           | 11:30 EST       | Star rating assignment
+# CLM_QUARTERLY_003_QUALITY_EXPORT      | CLM_QUARTERLY_002           | 11:45 EST       | Export quality results for regulatory filing
+# CLM_QUARTERLY_004_NOTIFICATION        | CLM_QUARTERLY_003           | 12:00 EST       | Quality measure notification to compliance team
+################################################################################
+
+################################################################################
+# Execution Graph:
+#
+#   PREFLIGHT
+#      |
+#      +---> MEMBER_SCD2 ----------+---> MEMBER_MONTHS ----+
+#      |                           |                        |
+#      +---> PROVIDER_REFRESH -----+                        |
+#                                                           |
+#                         +---> CLAIM_SUMMARY ------+       |
+#                         |                         |       |
+#        MEMBER_MONTHS ---+---> ENCOUNTER_SUMMARY --+       |
+#                         |                         |       |
+#                         +---> (QUALITY_MEASURES)--+       |
+#                                                   |       |
+#        MEMBER_SCD2 ---> PHI_MASKING --------------+       |
+#                                                   |       |
+#                              STATS_COLLECTION <---+       |
+#                                    |                      |
+#                              EXPORT_MEMBER_MONTHS <-------+
+#                                    |
+#                              VALIDATION
+#                                    |
+#                              NOTIFICATION
+################################################################################
+
+################################################################################
+# Error Handling:
+#   - Member SCD2: if > 5% of members change, flag for manual review
+#   - Member months: validate against prior month (+/- 3% tolerance)
+#   - Quality measures: compare rates to prior quarter (+/- 5% tolerance)
+#   - On failure: email claims-ops@company.com and claims-analytics@company.com
+#   - Quarterly quality jobs: also notify compliance-team@company.com
+################################################################################

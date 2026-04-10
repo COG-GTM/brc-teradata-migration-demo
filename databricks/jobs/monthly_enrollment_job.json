@@ -1,0 +1,195 @@
+{
+  "name": "Healthcare Claims - Monthly Enrollment Processing",
+  "description": "Monthly job to process member enrollment, generate member months, and calculate HEDIS quality measures.",
+  "tags": {
+    "team": "data-engineering",
+    "domain": "healthcare-claims",
+    "environment": "production",
+    "schedule": "monthly"
+  },
+  "schedule": {
+    "quartz_cron_expression": "0 0 4 3 * ? *",
+    "timezone_id": "America/New_York",
+    "pause_status": "UNPAUSED"
+  },
+  "max_concurrent_runs": 1,
+  "timeout_seconds": 21600,
+  "email_notifications": {
+    "on_start": [
+      "claims-pipeline-alerts@example.com"
+    ],
+    "on_success": [
+      "claims-pipeline-alerts@example.com",
+      "actuarial-team@example.com"
+    ],
+    "on_failure": [
+      "claims-pipeline-alerts@example.com",
+      "oncall-data-engineering@example.com"
+    ],
+    "no_alert_for_skipped_runs": true
+  },
+  "webhook_notifications": {
+    "on_failure": [
+      {
+        "id": "slack-webhook-claims-alerts"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "task_key": "01_monthly_enrollment_sp",
+      "description": "Run monthly enrollment stored procedure to generate member month rows",
+      "sql_task": {
+        "query": "CALL claims_warehouse.sp_monthly_enrollment(DATE_FORMAT(ADD_MONTHS(CURRENT_DATE(), -1), 'yyyy-MM'));",
+        "warehouse_id": "claims_sql_warehouse"
+      },
+      "timeout_seconds": 7200,
+      "max_retries": 2,
+      "min_retry_interval_millis": 300000
+    },
+    {
+      "task_key": "02_member_month_generation",
+      "description": "PySpark member month enrollment generation with age bands and demographics",
+      "depends_on": [
+        {
+          "task_key": "01_monthly_enrollment_sp"
+        }
+      ],
+      "notebook_task": {
+        "notebook_path": "/Repos/production/healthcare-claims/databricks/notebooks/06_member_month_enrollment",
+        "source": "WORKSPACE"
+      },
+      "job_cluster_key": "enrollment_cluster",
+      "timeout_seconds": 7200,
+      "max_retries": 1,
+      "min_retry_interval_millis": 120000
+    },
+    {
+      "task_key": "03_quality_measures",
+      "description": "Calculate HEDIS quality measures (BCS, CDC-HBA1C, COL, CBP, PCE)",
+      "depends_on": [
+        {
+          "task_key": "02_member_month_generation"
+        }
+      ],
+      "notebook_task": {
+        "notebook_path": "/Repos/production/healthcare-claims/databricks/notebooks/07_quality_measures",
+        "base_parameters": {
+          "measurement_year": "2025"
+        },
+        "source": "WORKSPACE"
+      },
+      "job_cluster_key": "enrollment_cluster",
+      "timeout_seconds": 7200,
+      "max_retries": 1,
+      "min_retry_interval_millis": 120000
+    },
+    {
+      "task_key": "04_claim_summary_refresh",
+      "description": "Refresh mart_claim_summary with latest monthly aggregations",
+      "depends_on": [
+        {
+          "task_key": "02_member_month_generation"
+        }
+      ],
+      "sql_task": {
+        "query": "INSERT OVERWRITE claims_mart.mart_claim_summary SELECT s.patient_id, d.member_key, DATE_TRUNC('month', s.claim_start_date) AS summary_month, YEAR(s.claim_start_date) AS summary_year, MONTH(s.claim_start_date) AS summary_month_number, DATE_FORMAT(s.claim_start_date, 'yyyy-MM') AS summary_year_month, 'MEDICAL' AS claim_category, CASE WHEN s.type_of_bill_code IS NOT NULL THEN 'INPATIENT' WHEN s.place_of_service_code IN ('21', '22', '23') THEN 'OUTPATIENT' WHEN s.place_of_service_code = '20' THEN 'EMERGENCY' ELSE 'PROFESSIONAL' END AS service_category, s.plan_id, s.line_of_business, s.network_status, COUNT(DISTINCT s.claim_id) AS claim_count, COUNT(*) AS claim_line_count, COUNT(DISTINCT s.claim_start_date) AS service_day_count, SUM(COALESCE(s.billed_amount, 0)) AS total_billed_amount, SUM(COALESCE(s.allowed_amount, 0)) AS total_allowed_amount, SUM(COALESCE(s.paid_amount, 0)) AS total_paid_amount, SUM(COALESCE(s.member_liability_amount, 0)) AS total_member_liability, SUM(COALESCE(s.copay_amount, 0)) AS total_copay_amount, SUM(COALESCE(s.coinsurance_amount, 0)) AS total_coinsurance_amount, SUM(COALESCE(s.deductible_amount, 0)) AS total_deductible_amount, CASE WHEN COUNT(DISTINCT s.claim_id) > 0 THEN SUM(COALESCE(s.paid_amount, 0)) / COUNT(DISTINCT s.claim_id) ELSE 0 END AS avg_paid_per_claim, CASE WHEN COUNT(DISTINCT s.claim_start_date) > 0 THEN SUM(COALESCE(s.paid_amount, 0)) / COUNT(DISTINCT s.claim_start_date) ELSE 0 END AS avg_paid_per_service_day, CURRENT_TIMESTAMP() AS created_timestamp FROM claims_staging.stg_medical_claim_current s LEFT JOIN claims_warehouse.dim_member d ON s.patient_id = d.member_id AND d.is_current = TRUE GROUP BY s.patient_id, d.member_key, DATE_TRUNC('month', s.claim_start_date), YEAR(s.claim_start_date), MONTH(s.claim_start_date), DATE_FORMAT(s.claim_start_date, 'yyyy-MM'), CASE WHEN s.type_of_bill_code IS NOT NULL THEN 'INPATIENT' WHEN s.place_of_service_code IN ('21', '22', '23') THEN 'OUTPATIENT' WHEN s.place_of_service_code = '20' THEN 'EMERGENCY' ELSE 'PROFESSIONAL' END, s.plan_id, s.line_of_business, s.network_status;",
+        "warehouse_id": "claims_sql_warehouse"
+      },
+      "timeout_seconds": 3600,
+      "max_retries": 1,
+      "min_retry_interval_millis": 120000
+    },
+    {
+      "task_key": "05_encounter_summary_refresh",
+      "description": "Refresh mart_encounter_summary with readmission flags and LOS metrics",
+      "depends_on": [
+        {
+          "task_key": "02_member_month_generation"
+        }
+      ],
+      "sql_task": {
+        "query": "INSERT OVERWRITE claims_mart.mart_encounter_summary SELECT e.patient_id, d.member_key, e.encounter_id, e.encounter_type, e.encounter_start_date, e.encounter_end_date, DATE_TRUNC('month', e.encounter_start_date) AS encounter_month, DATE_FORMAT(e.encounter_start_date, 'yyyy-MM') AS encounter_year_month, e.length_of_encounter_days AS length_of_stay_days, e.claim_count, e.principal_diagnosis_code, NULL AS principal_diagnosis_desc, NULL AS diagnosis_category, NULL AS primary_procedure_code, NULL AS drg_code, e.primary_provider_npi, e.facility_npi, e.plan_id, e.line_of_business, e.total_billed_amount, e.total_allowed_amount, e.total_paid_amount, e.total_member_liability, CASE WHEN LAG(e.encounter_end_date) OVER (PARTITION BY e.patient_id ORDER BY e.encounter_start_date) IS NOT NULL AND DATEDIFF(e.encounter_start_date, LAG(e.encounter_end_date) OVER (PARTITION BY e.patient_id ORDER BY e.encounter_start_date)) <= 30 THEN TRUE ELSE FALSE END AS is_readmission_30day, LAG(e.encounter_id) OVER (PARTITION BY e.patient_id ORDER BY e.encounter_start_date) AS prior_encounter_id, DATEDIFF(e.encounter_start_date, LAG(e.encounter_end_date) OVER (PARTITION BY e.patient_id ORDER BY e.encounter_start_date)) AS days_since_prior_discharge, CURRENT_TIMESTAMP() AS created_timestamp FROM claims_warehouse.fct_encounter e LEFT JOIN claims_warehouse.dim_member d ON e.patient_id = d.member_id AND d.is_current = TRUE;",
+        "warehouse_id": "claims_sql_warehouse"
+      },
+      "timeout_seconds": 3600,
+      "max_retries": 1,
+      "min_retry_interval_millis": 120000
+    },
+    {
+      "task_key": "06_optimize_mart_tables",
+      "description": "Optimize mart tables for query performance",
+      "depends_on": [
+        {
+          "task_key": "03_quality_measures"
+        },
+        {
+          "task_key": "04_claim_summary_refresh"
+        },
+        {
+          "task_key": "05_encounter_summary_refresh"
+        }
+      ],
+      "sql_task": {
+        "query": "OPTIMIZE claims_mart.mart_member_months ZORDER BY (member_id, enrollment_month); OPTIMIZE claims_mart.mart_claim_summary ZORDER BY (patient_id, summary_month); OPTIMIZE claims_mart.mart_encounter_summary ZORDER BY (patient_id, encounter_start_date); OPTIMIZE claims_mart.mart_quality_measures ZORDER BY (patient_id, measure_id); ANALYZE TABLE claims_mart.mart_member_months COMPUTE STATISTICS FOR ALL COLUMNS; ANALYZE TABLE claims_mart.mart_claim_summary COMPUTE STATISTICS FOR ALL COLUMNS;",
+        "warehouse_id": "claims_sql_warehouse"
+      },
+      "timeout_seconds": 3600,
+      "max_retries": 0
+    }
+  ],
+  "job_clusters": [
+    {
+      "job_cluster_key": "enrollment_cluster",
+      "new_cluster": {
+        "spark_version": "14.3.x-scala2.12",
+        "node_type_id": "i3.xlarge",
+        "num_workers": 4,
+        "autoscale": {
+          "min_workers": 2,
+          "max_workers": 8
+        },
+        "spark_conf": {
+          "spark.databricks.delta.optimizeWrite.enabled": "true",
+          "spark.databricks.delta.autoCompact.enabled": "true",
+          "spark.sql.adaptive.enabled": "true",
+          "spark.sql.adaptive.coalescePartitions.enabled": "true"
+        },
+        "aws_attributes": {
+          "first_on_demand": 1,
+          "availability": "SPOT_WITH_FALLBACK",
+          "zone_id": "auto",
+          "spot_bid_price_percent": 100
+        },
+        "custom_tags": {
+          "team": "data-engineering",
+          "project": "healthcare-claims",
+          "cost_center": "DE-001"
+        },
+        "enable_elastic_disk": true,
+        "data_security_mode": "SINGLE_USER",
+        "runtime_engine": "PHOTON"
+      }
+    }
+  ],
+  "queue": {
+    "enabled": true
+  },
+  "run_as": {
+    "service_principal_name": "healthcare-claims-pipeline-sp"
+  },
+  "access_control_list": [
+    {
+      "group_name": "data-engineering",
+      "permission_level": "CAN_MANAGE"
+    },
+    {
+      "group_name": "data-analysts",
+      "permission_level": "CAN_VIEW"
+    },
+    {
+      "group_name": "actuarial",
+      "permission_level": "CAN_VIEW"
+    }
+  ]
+}

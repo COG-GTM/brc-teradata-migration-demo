@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: stg_databricks__eligibility
+    description: >
+      Databricks member eligibility mapped to Tuva input layer.
+      Source: databricks/ddl/02_raw_tables.sql (claims_raw.raw_member_eligibility)
+    columns:
+      - name: person_id
+        description: "Member identifier (mapped from member_id)"
+        tests:
+          - not_null
+      - name: enrollment_start_date
+        tests:
+          - not_null
+
+  - name: stg_databricks__medical_claim
+    description: >
+      Databricks medical claims mapped to Tuva input layer.
+      ARRAY<STRING> diagnosis_codes unpacked to diagnosis_code_1..25 via array indexing.
+      DOUBLE financial amounts cast to NUMBER(18,2) for precision (DRIFT-006).
+      Source: databricks/ddl/02_raw_tables.sql (claims_raw.raw_medical_claim)
+    columns:
+      - name: claim_id
+        tests:
+          - not_null
+      - name: person_id
+        description: "Mapped from patient_id (Databricks naming drift)"
+        tests:
+          - not_null
+      - name: claim_start_date
+        tests:
+          - not_null
+
+  - name: stg_databricks__pharmacy_claim
+    description: >
+      Databricks pharmacy claims mapped to Tuva input layer.
+      Source: databricks/ddl/02_raw_tables.sql (claims_raw.raw_pharmacy_claim)
+    columns:
+      - name: claim_id
+        tests:
+          - not_null
+      - name: person_id
+        tests:
+          - not_null

@@ -1,0 +1,87 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-10",
+    "description": "Phase 2: Column-level cross-platform lineage map for healthcare claims migration"
+  },
+  "member_eligibility": {
+    "unified_target": "tuva.input_layer.eligibility",
+    "column_mappings": [
+      {"tuva_column": "person_id", "tuva_type": "VARCHAR", "teradata_column": "member_id", "teradata_type": "VARCHAR(20)", "databricks_column": "member_id", "databricks_type": "STRING", "snowflake_column": "member_id", "snowflake_type": "VARCHAR(20)", "drift": "none"},
+      {"tuva_column": "gender", "tuva_type": "VARCHAR", "teradata_column": "gender", "teradata_type": "CHAR(1)", "databricks_column": "gender", "databricks_type": "STRING", "snowflake_column": "gender", "snowflake_type": "VARCHAR(1)", "drift": "type_width"},
+      {"tuva_column": "birth_date", "tuva_type": "DATE", "teradata_column": "date_of_birth", "teradata_type": "DATE", "databricks_column": "date_of_birth", "databricks_type": "DATE", "snowflake_column": "date_of_birth", "snowflake_type": "DATE", "drift": "naming"},
+      {"tuva_column": "race", "tuva_type": "VARCHAR", "teradata_column": "race", "teradata_type": "VARCHAR(30)", "databricks_column": null, "databricks_type": null, "snowflake_column": null, "snowflake_type": null, "drift": "missing_column", "note": "race only in Teradata"},
+      {"tuva_column": "zip_code", "tuva_type": "VARCHAR", "teradata_column": "zip_code", "teradata_type": "CHAR(5)", "databricks_column": "zip_code", "databricks_type": "STRING", "snowflake_column": "zip_code", "snowflake_type": "VARCHAR(10)", "drift": "type_width"},
+      {"tuva_column": "state", "tuva_type": "VARCHAR", "teradata_column": "state", "teradata_type": "CHAR(2)", "databricks_column": "state_code", "databricks_type": "STRING", "snowflake_column": "state_code", "snowflake_type": "VARCHAR(2)", "drift": "naming"},
+      {"tuva_column": "subscriber_id", "tuva_type": "VARCHAR", "teradata_column": "subscriber_id", "teradata_type": "VARCHAR(20)", "databricks_column": "subscriber_id", "databricks_type": "STRING", "snowflake_column": "subscriber_id", "snowflake_type": "VARCHAR(20)", "drift": "none"},
+      {"tuva_column": "enrollment_start_date", "tuva_type": "DATE", "teradata_column": "enrollment_start_date", "teradata_type": "DATE", "databricks_column": "coverage_start_date", "databricks_type": "DATE", "snowflake_column": "eligibility_start_date", "snowflake_type": "DATE", "drift": "naming", "note": "Three different names for same concept"},
+      {"tuva_column": "enrollment_end_date", "tuva_type": "DATE", "teradata_column": "enrollment_end_date", "teradata_type": "DATE", "databricks_column": "coverage_end_date", "databricks_type": "DATE", "snowflake_column": "eligibility_end_date", "snowflake_type": "DATE", "drift": "naming"},
+      {"tuva_column": "payer", "tuva_type": "VARCHAR", "teradata_column": "payer_id", "teradata_type": "VARCHAR(20)", "databricks_column": null, "databricks_type": null, "snowflake_column": null, "snowflake_type": null, "drift": "missing_column", "note": "payer_id only in Teradata raw; Databricks/Snowflake have plan_id instead"},
+      {"tuva_column": "plan", "tuva_type": "VARCHAR", "teradata_column": "plan_id", "teradata_type": "VARCHAR(20)", "databricks_column": "plan_id", "databricks_type": "STRING", "snowflake_column": "plan_code", "snowflake_type": "VARCHAR(20)", "drift": "naming"},
+      {"tuva_column": "original_reason_entitlement_code", "tuva_type": "VARCHAR", "teradata_column": null, "teradata_type": null, "databricks_column": null, "databricks_type": null, "snowflake_column": null, "snowflake_type": null, "drift": "missing_column", "note": "Not in any legacy platform; Tuva-specific field"},
+      {"tuva_column": "dual_status_code", "tuva_type": "VARCHAR", "teradata_column": null, "teradata_type": null, "databricks_column": null, "databricks_type": null, "snowflake_column": null, "snowflake_type": null, "drift": "missing_column", "note": "Not in any legacy platform"},
+      {"tuva_column": "medicare_status_code", "tuva_type": "VARCHAR", "teradata_column": null, "teradata_type": null, "databricks_column": "medicare_beneficiary_id", "databricks_type": "STRING", "snowflake_column": null, "snowflake_type": null, "drift": "partial_coverage"},
+      {"tuva_column": "data_source", "tuva_type": "VARCHAR", "teradata_column": null, "teradata_type": null, "databricks_column": "source_system", "databricks_type": "STRING", "snowflake_column": "source_system", "snowflake_type": "VARCHAR(50)", "drift": "naming_and_missing"}
+    ]
+  },
+  "medical_claim": {
+    "unified_target": "tuva.input_layer.medical_claim",
+    "column_mappings": [
+      {"tuva_column": "claim_id", "teradata_column": "claim_id", "databricks_column": "claim_id", "snowflake_column": "claim_id", "drift": "none"},
+      {"tuva_column": "claim_line_number", "teradata_column": "claim_line_number", "databricks_column": "claim_line_number", "snowflake_column": "claim_line_number", "drift": "none"},
+      {"tuva_column": "person_id", "teradata_column": "member_id", "databricks_column": "patient_id", "snowflake_column": "member_id", "drift": "naming", "note": "Databricks uses patient_id instead of member_id"},
+      {"tuva_column": "claim_type", "teradata_column": "claim_type (I/P/O)", "databricks_column": "claim_type (PROFESSIONAL/INSTITUTIONAL)", "snowflake_column": "claim_type (P/I)", "drift": "value_encoding", "note": "Different code sets across platforms"},
+      {"tuva_column": "claim_start_date", "teradata_column": "service_date_from", "databricks_column": "claim_start_date", "snowflake_column": "start_date", "drift": "naming", "note": "Three different column names"},
+      {"tuva_column": "claim_end_date", "teradata_column": "service_date_to", "databricks_column": "claim_end_date", "snowflake_column": "end_date", "drift": "naming"},
+      {"tuva_column": "admission_date", "teradata_column": "admission_date", "databricks_column": "admission_date", "snowflake_column": "admission_date", "drift": "none"},
+      {"tuva_column": "discharge_date", "teradata_column": "discharge_date", "databricks_column": "discharge_date", "snowflake_column": "discharge_date", "drift": "none"},
+      {"tuva_column": "diagnosis_code_1", "teradata_column": "icd_diagnosis_code_1", "databricks_column": "diagnosis_codes[0]", "snowflake_column": "icd_diagnosis_code_1 OR diagnosis_codes[0]", "drift": "structural", "note": "CRITICAL: TD=25 individual columns, DB=ARRAY<STRING>, SF=VARIANT+10 columns"},
+      {"tuva_column": "diagnosis_code_type", "teradata_column": null, "databricks_column": "diagnosis_code_type", "snowflake_column": null, "drift": "missing_column", "note": "Only in Databricks; assumed ICD-10-CM in TD/SF"},
+      {"tuva_column": "place_of_service_code", "teradata_column": "place_of_service", "databricks_column": "place_of_service_code", "snowflake_column": "place_of_service", "drift": "naming"},
+      {"tuva_column": "bill_type_code", "teradata_column": "bill_type", "databricks_column": "type_of_bill_code", "snowflake_column": "bill_type", "drift": "naming"},
+      {"tuva_column": "ms_drg_code", "teradata_column": "ms_drg", "databricks_column": "drg_code", "snowflake_column": "drg_code", "drift": "naming"},
+      {"tuva_column": "revenue_center_code", "teradata_column": "revenue_center_code", "databricks_column": "revenue_code", "snowflake_column": "revenue_code", "drift": "naming"},
+      {"tuva_column": "hcpcs_code", "teradata_column": "hcpcs_code", "databricks_column": "procedure_code", "snowflake_column": "cpt_code", "drift": "naming"},
+      {"tuva_column": "rendering_npi", "teradata_column": "rendering_npi", "databricks_column": "rendering_provider_npi", "snowflake_column": "rendering_provider_npi", "drift": "naming"},
+      {"tuva_column": "billing_npi", "teradata_column": "billing_npi", "databricks_column": "billing_provider_npi", "snowflake_column": "billing_provider_npi", "drift": "naming"},
+      {"tuva_column": "facility_npi", "teradata_column": "facility_npi", "databricks_column": "facility_npi", "snowflake_column": null, "drift": "naming_and_missing", "note": "Snowflake uses facility_id instead of facility_npi"},
+      {"tuva_column": "paid_amount", "teradata_column": "paid_amount DECIMAL(18,2)", "databricks_column": "paid_amount DOUBLE", "snowflake_column": "paid_amount NUMBER(18,2)", "drift": "type", "note": "Databricks uses DOUBLE (floating point) vs DECIMAL/NUMBER"},
+      {"tuva_column": "charge_amount", "teradata_column": "charge_amount DECIMAL(18,2)", "databricks_column": "billed_amount DOUBLE", "snowflake_column": "billed_amount NUMBER(18,2)", "drift": "naming_and_type", "note": "TD uses charge_amount, DB/SF use billed_amount"},
+      {"tuva_column": "allowed_amount", "teradata_column": "allowed_amount", "databricks_column": "allowed_amount", "snowflake_column": "allowed_amount", "drift": "type_only"},
+      {"tuva_column": "coinsurance_amount", "teradata_column": "coinsurance", "databricks_column": "coinsurance_amount", "snowflake_column": "coinsurance_amount", "drift": "naming"},
+      {"tuva_column": "copayment_amount", "teradata_column": "copay", "databricks_column": "copay_amount", "snowflake_column": "copay_amount", "drift": "naming"},
+      {"tuva_column": "deductible_amount", "teradata_column": "deductible", "databricks_column": "deductible_amount", "snowflake_column": "deductible_amount", "drift": "naming"},
+      {"tuva_column": null, "teradata_column": null, "databricks_column": null, "snowflake_column": "net_paid_amount NUMBER(18,2)", "drift": "extra_column", "note": "ONLY in Snowflake - paid minus withhold and COB"},
+      {"tuva_column": null, "teradata_column": null, "databricks_column": null, "snowflake_column": "cob_amount NUMBER(18,2)", "drift": "extra_column", "note": "COB amount only in Snowflake"},
+      {"tuva_column": null, "teradata_column": null, "databricks_column": null, "snowflake_column": "withhold_amount NUMBER(18,2)", "drift": "extra_column", "note": "Withhold amount only in Snowflake"},
+      {"tuva_column": null, "teradata_column": "adjustment_type", "databricks_column": null, "snowflake_column": "adjustment_reason_code", "drift": "naming_and_missing"},
+      {"tuva_column": "claim_status", "teradata_column": "claim_status", "databricks_column": "claim_status", "snowflake_column": "status_code", "drift": "naming", "note": "Snowflake renames to status_code"}
+    ]
+  },
+  "pharmacy_claim": {
+    "unified_target": "tuva.input_layer.pharmacy_claim",
+    "column_mappings": [
+      {"tuva_column": "claim_id", "teradata_column": "claim_id", "databricks_column": "claim_id", "snowflake_column": "claim_id", "drift": "none"},
+      {"tuva_column": "person_id", "teradata_column": "member_id", "databricks_column": "patient_id", "snowflake_column": "member_id", "drift": "naming"},
+      {"tuva_column": "dispensing_date", "teradata_column": "dispensing_date", "databricks_column": "fill_date", "snowflake_column": "fill_date", "drift": "naming", "note": "TD uses dispensing_date, DB/SF use fill_date"},
+      {"tuva_column": "ndc_code", "teradata_column": "ndc_code VARCHAR(11)", "databricks_column": "ndc_code STRING", "snowflake_column": "ndc_code VARCHAR(11)", "drift": "none"},
+      {"tuva_column": "quantity", "teradata_column": "quantity DECIMAL(10,2)", "databricks_column": "quantity_dispensed DOUBLE", "snowflake_column": "quantity_dispensed NUMBER(10,3)", "drift": "naming_and_type", "note": "Different names AND different precision"},
+      {"tuva_column": "days_supply", "teradata_column": "days_supply SMALLINT", "databricks_column": "days_supply INT", "snowflake_column": "days_supply INTEGER", "drift": "type_width"},
+      {"tuva_column": "refill_number", "teradata_column": "refill_number SMALLINT", "databricks_column": "refill_number INT", "snowflake_column": "refill_number INTEGER", "drift": "type_width"},
+      {"tuva_column": "dispensing_provider_npi", "teradata_column": "dispensing_npi", "databricks_column": "pharmacy_npi", "snowflake_column": "pharmacy_npi", "drift": "naming"},
+      {"tuva_column": "prescribing_provider_npi", "teradata_column": "prescribing_npi", "databricks_column": "prescriber_npi", "snowflake_column": "prescribing_provider_npi", "drift": "naming", "note": "Three different names across platforms"},
+      {"tuva_column": "paid_amount", "teradata_column": "paid_amount DECIMAL(18,2)", "databricks_column": "paid_amount DOUBLE", "snowflake_column": "paid_amount NUMBER(18,2)", "drift": "type"},
+      {"tuva_column": "plan_paid_amount", "teradata_column": "plan_paid", "databricks_column": null, "snowflake_column": "net_paid_amount", "drift": "naming_and_missing"}
+    ]
+  },
+  "drift_summary": {
+    "total_column_mappings": 56,
+    "no_drift": 8,
+    "naming_drift": 22,
+    "type_drift": 6,
+    "structural_drift": 3,
+    "missing_columns": 9,
+    "extra_columns": 4,
+    "value_encoding_drift": 2,
+    "combined_drift": 2
+  }
+}

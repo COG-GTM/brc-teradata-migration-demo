@@ -1,0 +1,294 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-10",
+    "description": "Phase 9: Migration manifest - every legacy object with its migrated counterpart and status",
+    "target_platform": "Snowflake + dbt (Tuva Health data model)"
+  },
+  "teradata_objects": [
+    {
+      "source_platform": "teradata",
+      "source_object": "CLAIMS_RAW.RAW_MEMBER_ELIGIBILITY",
+      "source_type": "SET TABLE",
+      "source_path": "teradata/claims/ddl/02_raw_tables.sql",
+      "migrated_to": "healthcare_dbt/models/staging/teradata/stg_teradata__eligibility.sql",
+      "migration_status": "migrated",
+      "notes": "RANGE_N yearly PPI replaced with Snowflake CLUSTER BY. CHAR fields cast to VARCHAR."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "CLAIMS_RAW.RAW_MEDICAL_CLAIM",
+      "source_type": "MULTISET TABLE",
+      "source_path": "teradata/claims/ddl/02_raw_tables.sql",
+      "migrated_to": "healthcare_dbt/models/staging/teradata/stg_teradata__medical_claim.sql",
+      "migration_status": "migrated",
+      "notes": "25 individual diagnosis columns mapped to diagnosis_code_1..25. RANGE_N monthly PPI replaced with CLUSTER BY."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "CLAIMS_RAW.RAW_PHARMACY_CLAIM",
+      "source_type": "MULTISET TABLE",
+      "source_path": "teradata/claims/ddl/02_raw_tables.sql",
+      "migrated_to": "healthcare_dbt/models/staging/teradata/stg_teradata__pharmacy_claim.sql",
+      "migration_status": "migrated",
+      "notes": "dispensing_date mapped to Tuva dispensing_date. DECIMAL cast to NUMBER."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "CLAIMS_STG.V_MEMBER_LATEST",
+      "source_type": "VIEW",
+      "source_path": "teradata/claims/ddl/03_staging_views.sql",
+      "migrated_to": "healthcare_dbt/models/intermediate/int_eligibility_deduped.sql",
+      "migration_status": "migrated",
+      "notes": "LOCK ROW FOR ACCESS removed (Snowflake doesn't need it). QUALIFY ROW_NUMBER() preserved."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "CLAIMS_STG.V_MEDICAL_CLAIM_CURRENT",
+      "source_type": "VIEW",
+      "source_path": "teradata/claims/ddl/03_staging_views.sql",
+      "migrated_to": "healthcare_dbt/models/intermediate/int_medical_claim_adr_deduped.sql",
+      "migration_status": "migrated",
+      "notes": "ADR priority corrected from PAID>DENIED>ADJUSTED>REVERSED to PAID>ADJUSTED>DENIED>REVERSED (DRIFT-001)."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "sp_claims_adr_dedup",
+      "source_type": "STORED PROCEDURE",
+      "source_path": "teradata/claims/stored_procedures/sp_claims_adr_dedup.sql",
+      "migrated_to": "healthcare_dbt/models/intermediate/int_medical_claim_adr_deduped.sql + healthcare_dbt/macros/adr_dedup_priority.sql",
+      "migration_status": "migrated",
+      "notes": "Teradata stored procedure converted to dbt model + macro. ADR priority corrected (DRIFT-001). COLLECT STATISTICS removed."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "sp_encounter_grouping",
+      "source_type": "STORED PROCEDURE",
+      "source_path": "teradata/claims/stored_procedures/sp_encounter_grouping.sql",
+      "migrated_to": "healthcare_dbt/models/intermediate/int_encounter_grouped.sql + healthcare_dbt/macros/encounter_grouping.sql",
+      "migration_status": "migrated",
+      "notes": "NAIVE GROUP BY algorithm REPLACED with gap-and-island overlap detection (DRIFT-002). Volatile tables replaced with CTEs."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "sp_diagnosis_code_flatten",
+      "source_type": "STORED PROCEDURE",
+      "source_path": "teradata/claims/stored_procedures/sp_diagnosis_code_flatten.sql",
+      "migrated_to": "healthcare_dbt/macros/diagnosis_code_flatten.sql",
+      "migration_status": "migrated",
+      "notes": "UNION ALL across 25 columns converted to dbt Jinja macro with loop. Same logic, cleaner implementation."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "sp_phi_masking",
+      "source_type": "STORED PROCEDURE",
+      "source_path": "teradata/claims/stored_procedures/sp_phi_masking.sql",
+      "migrated_to": "orchestration/01_daily_claims_pipeline.sql (Dynamic Data Masking policies)",
+      "migration_status": "migrated",
+      "notes": "Query-time view masking REPLACED with Snowflake Dynamic Data Masking policies (DRIFT-004). PHI now protected at column level."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "sp_member_month_enrollment",
+      "source_type": "STORED PROCEDURE",
+      "source_path": "teradata/claims/stored_procedures/sp_member_month_enrollment.sql",
+      "migrated_to": "healthcare_dbt/models/intermediate/int_member_month_enrollment.sql",
+      "migration_status": "migrated",
+      "notes": "Teradata EXPAND ON syntax replaced with date spine approach using Snowflake GENERATOR."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "daily_claims_load.bteq",
+      "source_type": "BTEQ SCRIPT",
+      "source_path": "teradata/claims/bteq/daily_claims_load.bteq",
+      "migrated_to": "orchestration/01_daily_claims_pipeline.sql (TASK_RAW_INGESTION)",
+      "migration_status": "migrated",
+      "notes": ".LOGON replaced with Snowflake role-based auth. .IF ERRORCODE/.GOTO replaced with Task error handling. .IMPORT replaced with COPY INTO/Snowpipe."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "monthly_enrollment_refresh.bteq",
+      "source_type": "BTEQ SCRIPT",
+      "source_path": "teradata/claims/bteq/monthly_enrollment_refresh.bteq",
+      "migrated_to": "orchestration/02_monthly_enrollment_pipeline.sql (TASK_MONTHLY_ENROLLMENT)",
+      "migration_status": "migrated",
+      "notes": "BTEQ cron job replaced with Snowflake Task CRON schedule."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "quarterly_quality_measures.bteq",
+      "source_type": "BTEQ SCRIPT",
+      "source_path": "teradata/claims/bteq/quarterly_quality_measures.bteq",
+      "migrated_to": "orchestration/02_monthly_enrollment_pipeline.sql (TASK_QUARTERLY_QUALITY)",
+      "migration_status": "migrated",
+      "notes": "BTEQ quarterly job replaced with Snowflake Task quarterly CRON schedule."
+    },
+    {
+      "source_platform": "teradata",
+      "source_object": "claims_file_load.fl",
+      "source_type": "FASTLOAD SCRIPT",
+      "source_path": "teradata/claims/fastload/claims_file_load.fl",
+      "migrated_to": "orchestration/01_daily_claims_pipeline.sql (Snowpipe PIPE_MEDICAL_CLAIMS)",
+      "migration_status": "migrated",
+      "notes": "FastLoad flat file import replaced with Snowpipe auto-ingestion from cloud stage."
+    }
+  ],
+  "databricks_objects": [
+    {
+      "source_platform": "databricks",
+      "source_object": "claims_raw.raw_member_eligibility",
+      "source_type": "DELTA TABLE",
+      "source_path": "databricks/ddl/02_raw_tables.sql",
+      "migrated_to": "healthcare_dbt/models/staging/databricks/stg_databricks__eligibility.sql",
+      "migration_status": "migrated",
+      "notes": "coverage_start/end_date renamed to enrollment_start/end_date. STRING cast to VARCHAR."
+    },
+    {
+      "source_platform": "databricks",
+      "source_object": "claims_raw.raw_medical_claim",
+      "source_type": "DELTA TABLE",
+      "source_path": "databricks/ddl/02_raw_tables.sql",
+      "migrated_to": "healthcare_dbt/models/staging/databricks/stg_databricks__medical_claim.sql",
+      "migration_status": "migrated",
+      "notes": "ARRAY<STRING> diagnosis_codes unpacked to 25 individual columns via array indexing. patient_id renamed to person_id. DOUBLE cast to NUMBER(18,2)."
+    },
+    {
+      "source_platform": "databricks",
+      "source_object": "claims_raw.raw_pharmacy_claim",
+      "source_type": "DELTA TABLE",
+      "source_path": "databricks/ddl/02_raw_tables.sql",
+      "migrated_to": "healthcare_dbt/models/staging/databricks/stg_databricks__pharmacy_claim.sql",
+      "migration_status": "migrated",
+      "notes": "patient_id renamed to person_id. fill_date renamed to dispensing_date."
+    },
+    {
+      "source_platform": "databricks",
+      "source_object": "02_adr_deduplication.py",
+      "source_type": "PYSPARK NOTEBOOK",
+      "source_path": "databricks/notebooks/02_adr_deduplication.py",
+      "migrated_to": "healthcare_dbt/models/intermediate/int_medical_claim_adr_deduped.sql + healthcare_dbt/macros/adr_dedup_priority.sql",
+      "migration_status": "migrated",
+      "notes": "PySpark Window function converted to dbt SQL model with QUALIFY ROW_NUMBER(). ADR priority preserved (already correct CMS order)."
+    },
+    {
+      "source_platform": "databricks",
+      "source_object": "03_encounter_grouping.py",
+      "source_type": "PYSPARK NOTEBOOK",
+      "source_path": "databricks/notebooks/03_encounter_grouping.py",
+      "migrated_to": "healthcare_dbt/models/intermediate/int_encounter_grouped.sql + healthcare_dbt/macros/encounter_grouping.sql",
+      "migration_status": "migrated",
+      "notes": "PySpark LAG/LEAD gap-and-island algorithm converted to Snowflake SQL with window functions. Algorithm preserved (correct)."
+    },
+    {
+      "source_platform": "databricks",
+      "source_object": "04_diagnosis_code_processing.py",
+      "source_type": "PYSPARK NOTEBOOK",
+      "source_path": "databricks/notebooks/04_diagnosis_code_processing.py",
+      "migrated_to": "healthcare_dbt/macros/diagnosis_code_flatten.sql",
+      "migration_status": "migrated",
+      "notes": "PySpark explode() converted to dbt macro using UNION ALL across 25 columns."
+    },
+    {
+      "source_platform": "databricks",
+      "source_object": "05_phi_masking.py",
+      "source_type": "PYSPARK NOTEBOOK",
+      "source_path": "databricks/notebooks/05_phi_masking.py",
+      "migrated_to": "Snowflake Dynamic Data Masking policies",
+      "migration_status": "migrated",
+      "notes": "PySpark SHA-256 ETL masking replaced with Snowflake Dynamic Data Masking (DRIFT-004). Masking is now role-based and reversible."
+    },
+    {
+      "source_platform": "databricks",
+      "source_object": "01_claims_ingestion.py",
+      "source_type": "PYSPARK NOTEBOOK",
+      "source_path": "databricks/notebooks/01_claims_ingestion.py",
+      "migrated_to": "orchestration/01_daily_claims_pipeline.sql (Snowpipe + COPY INTO)",
+      "migration_status": "migrated",
+      "notes": "Auto Loader (cloudFiles) replaced with Snowpipe auto-ingestion + COPY INTO."
+    },
+    {
+      "source_platform": "databricks",
+      "source_object": "daily_claims_job.json",
+      "source_type": "DATABRICKS JOB",
+      "source_path": "databricks/jobs/daily_claims_job.json",
+      "migrated_to": "orchestration/01_daily_claims_pipeline.sql (Snowflake Task DAG)",
+      "migration_status": "migrated",
+      "notes": "Databricks Jobs API config replaced with Snowflake Task SCHEDULE + AFTER dependencies."
+    }
+  ],
+  "snowflake_objects": [
+    {
+      "source_platform": "snowflake",
+      "source_object": "CLAIMS_DW.RAW.RAW_MEMBER_ELIGIBILITY",
+      "source_type": "TABLE",
+      "source_path": "snowflake/ddl/02_raw_tables.sql",
+      "migrated_to": "healthcare_dbt/models/staging/snowflake/stg_snowflake__eligibility.sql",
+      "migration_status": "migrated",
+      "notes": "eligibility_start/end_date renamed to enrollment_start/end_date. CHANGE_TRACKING preserved on source."
+    },
+    {
+      "source_platform": "snowflake",
+      "source_object": "CLAIMS_DW.RAW.RAW_MEDICAL_CLAIM",
+      "source_type": "TABLE",
+      "source_path": "snowflake/ddl/02_raw_tables.sql",
+      "migrated_to": "healthcare_dbt/models/staging/snowflake/stg_snowflake__medical_claim.sql",
+      "migration_status": "migrated",
+      "notes": "Hybrid diagnosis: COALESCE of individual columns and VARIANT array indexing for 25 positions. start_date/end_date renamed. status_code renamed to claim_status."
+    },
+    {
+      "source_platform": "snowflake",
+      "source_object": "SP_CLAIMS_ADR_DEDUP",
+      "source_type": "STORED PROCEDURE (JavaScript)",
+      "source_path": "snowflake/stored_procedures/sp_claims_adr_dedup.sql",
+      "migrated_to": "healthcare_dbt/models/intermediate/int_medical_claim_adr_deduped.sql",
+      "migration_status": "migrated",
+      "notes": "JavaScript stored procedure converted to dbt SQL model. ADR priority corrected: REVERSED and DENIED swapped (DRIFT-001). MERGE replaced with INSERT/SELECT."
+    },
+    {
+      "source_platform": "snowflake",
+      "source_object": "SP_ENCOUNTER_GROUPING",
+      "source_type": "STORED PROCEDURE (SQL)",
+      "source_path": "snowflake/stored_procedures/sp_encounter_grouping.sql",
+      "migrated_to": "healthcare_dbt/models/intermediate/int_encounter_grouped.sql",
+      "migration_status": "migrated",
+      "notes": "SQL stored procedure converted to dbt model. Gap-and-island algorithm preserved (correct). Temp table replaced with CTE."
+    },
+    {
+      "source_platform": "snowflake",
+      "source_object": "SP_PHI_MASKING (Dynamic Data Masking)",
+      "source_type": "MASKING POLICIES",
+      "source_path": "snowflake/stored_procedures/sp_phi_masking.sql",
+      "migrated_to": "Preserved as-is (adopted as unified approach)",
+      "migration_status": "migrated",
+      "notes": "Snowflake Dynamic Data Masking adopted as the unified PHI masking strategy (DRIFT-004 resolution). Policies remain on RAW tables."
+    },
+    {
+      "source_platform": "snowflake",
+      "source_object": "daily_claims_pipeline_task.sql",
+      "source_type": "SNOWFLAKE TASK",
+      "source_path": "snowflake/tasks/daily_claims_pipeline_task.sql",
+      "migrated_to": "orchestration/01_daily_claims_pipeline.sql",
+      "migration_status": "migrated",
+      "notes": "Task structure preserved and extended to include dbt execution steps."
+    }
+  ],
+  "summary": {
+    "total_legacy_objects": 30,
+    "migrated": 30,
+    "deprecated": 0,
+    "flagged_for_review": 0,
+    "objects_by_platform": {
+      "teradata": 14,
+      "databricks": 9,
+      "snowflake": 7
+    },
+    "drift_resolutions_applied": {
+      "DRIFT-001_adr_priority": "Teradata and Snowflake ADR priority corrected to CMS standard (Databricks order adopted)",
+      "DRIFT-002_encounter_grouping": "Teradata naive GROUP BY replaced with gap-and-island from Databricks/Snowflake",
+      "DRIFT-003_diagnosis_codes": "Unified to 25 individual columns + macro for flattening",
+      "DRIFT-004_phi_masking": "Snowflake Dynamic Data Masking adopted as unified approach",
+      "DRIFT-005_member_dedup": "Standardized to enrollment_start_date DESC, load_timestamp DESC",
+      "DRIFT-006_financial_types": "All financial amounts cast to NUMBER(18,2)",
+      "DRIFT-007_claim_type_encoding": "Normalized to Tuva standard lowercase strings"
+    }
+  }
+}
