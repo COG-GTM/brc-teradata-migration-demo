@@ -1,0 +1,6 @@
+risk_rating,rating_description,pd_lower_bound,pd_upper_bound,lgd_unsecured,lgd_secured,risk_weight_sa,rating_category
+A,Investment Grade - Minimal Risk,0.0001,0.005,0.45,0.20,0.20,LOW
+B,Standard - Low Risk,0.005,0.02,0.45,0.25,0.50,LOW
+C,Acceptable - Moderate Risk,0.02,0.05,0.45,0.30,0.75,MEDIUM
+D,Sub-Standard - Elevated Risk,0.05,0.10,0.50,0.35,1.00,HIGH
+E,Watchlist - High Risk,0.10,0.25,0.55,0.40,1.50,HIGH

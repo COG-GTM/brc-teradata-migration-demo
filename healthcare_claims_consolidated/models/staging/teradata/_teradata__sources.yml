@@ -1,0 +1,173 @@
+version: 2
+
+sources:
+  - name: teradata_raw
+    description: >
+      Raw landing zone tables migrated from the Teradata BARCLAYS_RAW database.
+      Originally loaded by TPT/FastLoad/MultiLoad processes.
+      Source: Teradata / BARCLAYS_RAW
+    database: "{{ env_var('DBT_RAW_DATABASE', 'healthcare_claims_consolidated') }}"
+    schema: "{{ env_var('DBT_RAW_SCHEMA', 'raw') }}"
+    loader: external_etl
+
+    tables:
+      - name: customer
+        description: >
+          Customer master data. Migrated from Teradata SET table BARCLAYS_RAW.CUSTOMER.
+          Original PRIMARY INDEX: customer_id. Teradata COMPRESS on nationality, kyc_status,
+          risk_rating, segment, country. CHARACTER SET LATIN NOT CASESPECIFIC.
+        columns:
+          - name: customer_id
+            description: Unique customer identifier (original Teradata INTEGER NOT NULL)
+            tests:
+              - unique
+              - not_null
+          - name: first_name
+            description: Customer first name (original VARCHAR(100) NOT CASESPECIFIC)
+          - name: last_name
+            description: Customer last name (original VARCHAR(100) NOT CASESPECIFIC)
+          - name: date_of_birth
+            description: Customer date of birth (original DATE FORMAT 'YYYY-MM-DD')
+          - name: nationality
+            description: "ISO 2-letter country code (original CHAR(2) COMPRESS ('GB','US','DE','FR','IE'))"
+          - name: kyc_status
+            description: "KYC verification status (original COMPRESS ('VERIFIED','PENDING','EXPIRED'))"
+          - name: risk_rating
+            description: "Customer risk rating (original CHAR(1) COMPRESS ('L','M','H'))"
+          - name: onboarding_date
+            description: Date customer was onboarded
+          - name: segment
+            description: "Customer segment (original COMPRESS ('RETAIL','WEALTH','CORPORATE'))"
+          - name: email
+            description: Customer email address (PHI - masked in mart layer)
+          - name: phone_number
+            description: Customer phone number (PHI - masked in mart layer)
+          - name: address_line_1
+            description: Address line 1 (PHI - masked in mart layer)
+          - name: address_line_2
+            description: Address line 2 (PHI - masked in mart layer)
+          - name: city
+            description: City
+          - name: postcode
+            description: Postal code
+          - name: country
+            description: "Country code (original CHAR(2) COMPRESS ('GB'))"
+
+      - name: account
+        description: >
+          Account records. Migrated from Teradata MULTISET table BARCLAYS_RAW.ACCOUNT.
+          Original PI: account_id. PPI: RANGE_N on open_date (yearly partitions 2000-2030).
+        columns:
+          - name: account_id
+            description: Unique account identifier
+            tests:
+              - unique
+              - not_null
+          - name: customer_id
+            description: FK to customer table
+            tests:
+              - not_null
+          - name: account_type
+            description: "Type of account (original COMPRESS ('CURRENT','SAVINGS','ISA','MORTGAGE','LOAN','CREDIT_CARD'))"
+          - name: currency
+            description: "ISO currency code (original COMPRESS ('GBP','EUR','USD'))"
+          - name: branch_code
+            description: Branch sort code (CHAR(6))
+          - name: sort_code
+            description: Sort code (CHAR(6))
+          - name: status
+            description: "Account status (original COMPRESS ('ACTIVE','DORMANT','CLOSED'))"
+          - name: open_date
+            description: Date account was opened
+          - name: close_date
+            description: Date account was closed (null if still open)
+          - name: credit_limit
+            description: Credit limit (DECIMAL(15,2))
+          - name: overdraft_limit
+            description: Overdraft limit (DECIMAL(15,2))
+
+      - name: transaction
+        description: >
+          Financial transactions. Migrated from Teradata MULTISET table BARCLAYS_RAW.TRANSACTION.
+          Original PI: transaction_id. PPI: RANGE_N on transaction_date (monthly 2020-2030).
+        columns:
+          - name: transaction_id
+            description: Unique transaction identifier (BIGINT)
+            tests:
+              - unique
+              - not_null
+          - name: account_id
+            description: FK to account table
+            tests:
+              - not_null
+          - name: transaction_date
+            description: Date of the transaction
+          - name: transaction_time
+            description: Time of the transaction (TIME(6))
+          - name: amount
+            description: Transaction amount (always positive; direction from transaction_type)
+          - name: currency
+            description: Transaction currency
+          - name: transaction_type
+            description: "Type (original COMPRESS ('DEBIT','CREDIT','TRANSFER','FEE','INTEREST','REVERSAL'))"
+          - name: counterparty_id
+            description: FK to counterparty table (nullable)
+          - name: description
+            description: Transaction narrative/description
+          - name: channel
+            description: "Originating channel (original COMPRESS ('BRANCH','ONLINE','MOBILE','ATM','TELEPHONE','BATCH'))"
+          - name: reference_number
+            description: Reference number
+          - name: balance_after
+            description: Account balance after transaction
+
+      - name: market_data
+        description: >
+          Market rates and prices. Migrated from BARCLAYS_RAW.MARKET_DATA.
+          Original PI: (instrument_id, valuation_date).
+        columns:
+          - name: instrument_id
+            description: Instrument/rate identifier
+          - name: valuation_date
+            description: Date of the valuation
+          - name: instrument_type
+            description: "Type (original COMPRESS ('FX_RATE','INTEREST_RATE','EQUITY_PRICE','BOND_YIELD'))"
+          - name: instrument_name
+            description: Human-readable instrument name
+          - name: currency
+            description: Denomination currency
+          - name: mid_price
+            description: Mid-market price/rate (DECIMAL(18,8))
+          - name: bid_price
+            description: Bid price (DECIMAL(18,8))
+          - name: ask_price
+            description: Ask/offer price (DECIMAL(18,8))
+          - name: source_system
+            description: Source system identifier
+
+      - name: counterparty
+        description: >
+          Counterparty reference data. Migrated from Teradata SET table BARCLAYS_RAW.COUNTERPARTY.
+          Original PI: counterparty_id.
+        columns:
+          - name: counterparty_id
+            description: Unique counterparty identifier
+            tests:
+              - unique
+              - not_null
+          - name: counterparty_name
+            description: Legal entity name
+          - name: counterparty_type
+            description: "Type (original COMPRESS ('BANK','CORPORATE','GOVERNMENT','INDIVIDUAL','MERCHANT'))"
+          - name: country_code
+            description: ISO 2-letter country code
+          - name: lei_code
+            description: Legal Entity Identifier (20 chars)
+          - name: swift_bic
+            description: SWIFT/BIC code
+          - name: risk_rating
+            description: Risk rating (L/M/H)
+          - name: sanctions_flag
+            description: Sanctions listed flag (Y/N)
+          - name: pep_flag
+            description: PEP flag (Y/N)

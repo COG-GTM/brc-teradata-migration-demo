@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: fct_aml_alerts
+    description: >
+      AML alert fact table for compliance reporting.
+      Migrated from: teradata/stored_procedures/sp_aml_screening.sql
+      Incremental materialization. Includes structuring detection,
+      velocity breach, high-risk country, and sanctions match alerts.
+    columns:
+      - name: alert_id
+        tests: [unique, not_null]
+      - name: alert_type
+        tests:
+          - accepted_values:
+              values: ['STRUCTURING', 'VELOCITY_BREACH', 'HIGH_RISK_COUNTRY', 'SANCTIONS_MATCH']
+      - name: alert_severity
+        tests:
+          - accepted_values:
+              values: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+
+  - name: fct_kyc_status
+    description: >
+      KYC compliance status for regulatory reporting.
+      Tracks verification status, risk rating, and account activity
+      across unified cross-platform customer data.
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+      - name: compliance_status
+        tests:
+          - accepted_values:
+              values: ['OVERDUE', 'REMEDIATION_REQUIRED', 'IN_PROGRESS', 'COMPLIANT', 'UNKNOWN']

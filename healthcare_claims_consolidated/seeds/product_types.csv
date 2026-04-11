@@ -1,0 +1,11 @@
+product_code,product_name,product_category,asset_class,is_lending_product,regulatory_treatment
+CURR,Current Account,DEPOSITS,RETAIL,false,STANDARDISED
+SAVE,Savings Account,DEPOSITS,RETAIL,false,STANDARDISED
+PSNL,Personal Loan,LENDING,RETAIL,true,STANDARDISED
+MORT,Residential Mortgage,LENDING,RETAIL,true,IRB_FOUNDATION
+CMRT,Commercial Mortgage,LENDING,CORPORATE,true,IRB_FOUNDATION
+CRED,Credit Card,REVOLVING_CREDIT,RETAIL,true,STANDARDISED
+OVRD,Overdraft,REVOLVING_CREDIT,RETAIL,true,STANDARDISED
+CORP,Corporate Loan,LENDING,CORPORATE,true,IRB_ADVANCED
+TRAD,Trade Finance,TRADE,CORPORATE,true,STANDARDISED
+DERV,Derivatives,TRADING,MARKET,false,MARKET_RISK

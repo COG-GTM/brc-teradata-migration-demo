@@ -1,0 +1,24 @@
+country_code,country_name,region,is_eu,is_high_risk,fatf_status
+GB,United Kingdom,EUROPE,false,false,MEMBER
+US,United States,NORTH_AMERICA,false,false,MEMBER
+DE,Germany,EUROPE,true,false,MEMBER
+FR,France,EUROPE,true,false,MEMBER
+JP,Japan,ASIA_PACIFIC,false,false,MEMBER
+CA,Canada,NORTH_AMERICA,false,false,MEMBER
+AU,Australia,ASIA_PACIFIC,false,false,MEMBER
+CH,Switzerland,EUROPE,false,false,MEMBER
+SG,Singapore,ASIA_PACIFIC,false,false,MEMBER
+HK,Hong Kong,ASIA_PACIFIC,false,false,MEMBER
+IE,Ireland,EUROPE,true,false,MEMBER
+NL,Netherlands,EUROPE,true,false,MEMBER
+IN,India,ASIA_PACIFIC,false,false,MEMBER
+BR,Brazil,SOUTH_AMERICA,false,false,MEMBER
+ZA,South Africa,AFRICA,false,false,MEMBER
+AE,United Arab Emirates,MIDDLE_EAST,false,false,MEMBER
+NG,Nigeria,AFRICA,false,true,MONITORING
+PK,Pakistan,ASIA_PACIFIC,false,true,MONITORING
+IR,Iran,MIDDLE_EAST,false,true,BLACKLISTED
+KP,North Korea,ASIA_PACIFIC,false,true,BLACKLISTED
+SY,Syria,MIDDLE_EAST,false,true,BLACKLISTED
+CU,Cuba,CARIBBEAN,false,true,BLACKLISTED
+VE,Venezuela,SOUTH_AMERICA,false,true,MONITORING

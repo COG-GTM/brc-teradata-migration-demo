@@ -1,0 +1,94 @@
+version: 2
+
+models:
+  - name: int_unified_customer
+    description: >
+      Unified customer records consolidated from Teradata, Databricks, and Snowflake.
+      Cross-platform dedup priority: Teradata (master) > Snowflake > Databricks.
+      Resolves column naming drift (address_line1/address_line_1, customer_segment/segment,
+      email_address/email, phone/phone_number).
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+      - name: source_platform
+        tests:
+          - accepted_values:
+              values: ['TERADATA', 'DATABRICKS', 'SNOWFLAKE']
+
+  - name: int_unified_account
+    description: >
+      Unified account records consolidated from all three platforms.
+      Resolves: ccy/currency/currency_code naming drift, opened_date/open_date,
+      is_active boolean/status VARCHAR structural drift.
+    columns:
+      - name: account_id
+        tests: [unique, not_null]
+      - name: customer_id
+        tests: [not_null]
+
+  - name: int_unified_transaction
+    description: >
+      Unified transaction records from all three platforms.
+      Resolves: txn_id/transaction_id, txn_date/transaction_date,
+      narrative/description, running_balance/balance_after naming drift.
+      Standardizes value_band and signed_amount derivation across platforms.
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: account_id
+        tests: [not_null]
+
+  - name: int_unified_counterparty
+    description: >
+      Unified counterparty records from all three platforms.
+      Resolves: name/counterparty_name, entity_type/counterparty_type naming drift.
+      Resolves: VARIANT screening_flags JSON / CHAR(1) Y/N / boolean structural drift.
+    columns:
+      - name: counterparty_id
+        tests: [unique, not_null]
+
+  - name: int_unified_market_data
+    description: >
+      Unified market data from all three platforms.
+      Resolves: ccy/currency/currency_code, data_source/source_system naming drift.
+
+  - name: int_transaction_enriched
+    description: >
+      Enriched transactions joined with unified account, customer, and counterparty data.
+      Provides the denormalized view used by all downstream marts.
+      Migrated from: teradata/stored_procedures/sp_daily_transaction_load.sql
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+
+  - name: int_customer_risk_factors
+    description: >
+      Customer risk factor calculations.
+      Migrated from: teradata/stored_procedures/sp_customer_risk_scoring.sql
+      Logic drift resolution: adopted Teradata priority order for risk rating derivation
+      (verified correct per Basel III standards).
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+
+  - name: int_aml_screening_flags
+    description: >
+      AML screening alert flags generated from enriched transactions.
+      Migrated from: teradata/stored_procedures/sp_aml_screening.sql
+      Logic drift resolution: adopted Teradata structuring threshold range (8000-9999)
+      over Databricks narrower range (9000-9999) per FCA guidelines.
+    columns:
+      - name: alert_id
+        tests: [unique, not_null]
+
+  - name: int_daily_account_balances
+    description: >
+      Daily balance snapshots computed from unified transactions.
+      Migrated from: teradata/stored_procedures/sp_daily_transaction_load.sql
+      (MERGE INTO FCT_DAILY_BALANCE section).
+      Incremental materialization replaces Teradata MERGE semantics.
+    columns:
+      - name: account_id
+        tests: [not_null]
+      - name: balance_date
+        tests: [not_null]

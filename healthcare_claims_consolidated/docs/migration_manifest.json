@@ -1,0 +1,320 @@
+{
+  "metadata": {
+    "generated_date": "2026-04-02",
+    "project": "healthcare_claims_consolidated",
+    "description": "Every legacy object with its migrated counterpart and migration status"
+  },
+  "statistics": {
+    "total_legacy_objects": 42,
+    "migrated": 38,
+    "deprecated": 2,
+    "flagged_for_review": 2
+  },
+  "objects": [
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_RAW.CUSTOMER",
+      "object_type": "TABLE",
+      "migrated_to": "healthcare_claims_consolidated/models/staging/teradata/stg_teradata__customer.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_RAW.ACCOUNT",
+      "object_type": "TABLE",
+      "migrated_to": "healthcare_claims_consolidated/models/staging/teradata/stg_teradata__account.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_RAW.TRANSACTION",
+      "object_type": "TABLE",
+      "migrated_to": "healthcare_claims_consolidated/models/staging/teradata/stg_teradata__transaction.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_RAW.MARKET_DATA",
+      "object_type": "TABLE",
+      "migrated_to": "healthcare_claims_consolidated/models/staging/teradata/stg_teradata__market_data.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_RAW.COUNTERPARTY",
+      "object_type": "TABLE",
+      "migrated_to": "healthcare_claims_consolidated/models/staging/teradata/stg_teradata__counterparty.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_STG.V_CUSTOMER_LATEST",
+      "object_type": "VIEW",
+      "migrated_to": "stg_teradata__customer.sql (dedup logic)",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_STG.V_ACCOUNT_CURRENT",
+      "object_type": "VIEW",
+      "migrated_to": "stg_teradata__account.sql (derived_status logic)",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_STG.V_TRANSACTION_ENRICHED",
+      "object_type": "VIEW",
+      "migrated_to": "stg_teradata__transaction.sql + int_transaction_enriched.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_STG.V_MARKET_DATA_LATEST",
+      "object_type": "VIEW",
+      "migrated_to": "stg_teradata__market_data.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_STG.V_COUNTERPARTY_SCREENED",
+      "object_type": "VIEW",
+      "migrated_to": "stg_teradata__counterparty.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_DWH.DIM_CUSTOMER",
+      "object_type": "TABLE",
+      "migrated_to": "snapshots/snap_customer_risk_rating.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_DWH.DIM_ACCOUNT",
+      "object_type": "TABLE",
+      "migrated_to": "models/marts/finance/dim_accounts.sql + snapshots/snap_account_status.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_DWH.DIM_DATE",
+      "object_type": "TABLE",
+      "migrated_to": "seeds/dim_date.csv",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_DWH.FCT_TRANSACTION",
+      "object_type": "TABLE",
+      "migrated_to": "models/marts/finance/fct_daily_transactions.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_DWH.FCT_DAILY_BALANCE",
+      "object_type": "TABLE",
+      "migrated_to": "models/marts/finance/fct_daily_balances.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_MART.MART_CREDIT_RISK",
+      "object_type": "TABLE",
+      "migrated_to": "models/marts/risk/fct_credit_risk_scores.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_MART.MART_REGULATORY_CAPITAL",
+      "object_type": "TABLE",
+      "migrated_to": "models/marts/risk/fct_regulatory_capital.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_MART.MART_AML_ALERTS",
+      "object_type": "TABLE",
+      "migrated_to": "models/marts/compliance/fct_aml_alerts.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "BARCLAYS_MART.MART_MONTHLY_PNL",
+      "object_type": "TABLE",
+      "migrated_to": "models/marts/finance/fct_monthly_pnl.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "sp_daily_transaction_load",
+      "object_type": "STORED_PROCEDURE",
+      "migrated_to": "Multiple dbt models + snapshots (see lineage map)",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "sp_customer_risk_scoring",
+      "object_type": "STORED_PROCEDURE",
+      "migrated_to": "int_customer_risk_factors.sql + fct_credit_risk_scores.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "sp_aml_screening",
+      "object_type": "STORED_PROCEDURE",
+      "migrated_to": "int_aml_screening_flags.sql + fct_aml_alerts.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "sp_monthly_pnl_rollup",
+      "object_type": "STORED_PROCEDURE",
+      "migrated_to": "fct_monthly_pnl.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "sp_regulatory_capital_calc",
+      "object_type": "STORED_PROCEDURE",
+      "migrated_to": "fct_regulatory_capital.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "daily_batch_load.bteq",
+      "object_type": "BTEQ_SCRIPT",
+      "migrated_to": "orchestration/snowflake_tasks/01_daily_batch_pipeline.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "monthly_regulatory_report.bteq",
+      "object_type": "BTEQ_SCRIPT",
+      "migrated_to": "orchestration/snowflake_tasks/02_monthly_regulatory_pipeline.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "COLLECT STATISTICS statements",
+      "object_type": "DDL",
+      "migrated_to": "N/A",
+      "status": "DEPRECATED",
+      "notes": "Snowflake auto-manages statistics via micro-partition metadata. No manual COLLECT STATISTICS needed."
+    },
+    {
+      "legacy_platform": "TERADATA",
+      "legacy_object": "PRIMARY INDEX definitions",
+      "object_type": "DDL",
+      "migrated_to": "N/A",
+      "status": "DEPRECATED",
+      "notes": "Snowflake uses micro-partitions with automatic clustering. No PI equivalent needed."
+    },
+    {
+      "legacy_platform": "DATABRICKS",
+      "legacy_object": "healthcare_raw.customer (Delta)",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/databricks/stg_databricks__customer.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "DATABRICKS",
+      "legacy_object": "healthcare_raw.account (Delta)",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/databricks/stg_databricks__account.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "DATABRICKS",
+      "legacy_object": "healthcare_raw.transaction (Delta)",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/databricks/stg_databricks__transaction.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "DATABRICKS",
+      "legacy_object": "healthcare_raw.market_data (Delta)",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/databricks/stg_databricks__market_data.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "DATABRICKS",
+      "legacy_object": "healthcare_raw.counterparty (Delta)",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/databricks/stg_databricks__counterparty.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "DATABRICKS",
+      "legacy_object": "PySpark transformation notebooks",
+      "object_type": "NOTEBOOK",
+      "migrated_to": "dbt SQL models (staging + intermediate + marts)",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "DATABRICKS",
+      "legacy_object": "Auto Loader ingestion config",
+      "object_type": "CONFIG",
+      "migrated_to": "orchestration/snowpipe/raw_data_ingestion.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "SNOWFLAKE",
+      "legacy_object": "HEALTHCARE_RAW.customer",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/snowflake/stg_snowflake__customer.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "SNOWFLAKE",
+      "legacy_object": "HEALTHCARE_RAW.account",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/snowflake/stg_snowflake__account.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "SNOWFLAKE",
+      "legacy_object": "HEALTHCARE_RAW.transaction",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/snowflake/stg_snowflake__transaction.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "SNOWFLAKE",
+      "legacy_object": "HEALTHCARE_RAW.market_data",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/snowflake/stg_snowflake__market_data.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "SNOWFLAKE",
+      "legacy_object": "HEALTHCARE_RAW.counterparty",
+      "object_type": "TABLE",
+      "migrated_to": "models/staging/snowflake/stg_snowflake__counterparty.sql",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "SNOWFLAKE",
+      "legacy_object": "Snowflake stored procedures",
+      "object_type": "STORED_PROCEDURE",
+      "migrated_to": "dbt SQL models",
+      "status": "MIGRATED"
+    },
+    {
+      "legacy_platform": "SNOWFLAKE",
+      "legacy_object": "Dynamic Data Masking policies",
+      "object_type": "POLICY",
+      "migrated_to": "macros/phi_masking.sql + production DDM policies",
+      "status": "FLAGGED_FOR_REVIEW",
+      "notes": "DDM policies should be re-applied in the consolidated Snowflake environment. The dbt macros provide application-level masking; DDM provides database-level masking."
+    },
+    {
+      "legacy_platform": "SNOWFLAKE",
+      "legacy_object": "txn_metadata VARIANT column",
+      "object_type": "COLUMN",
+      "migrated_to": "N/A",
+      "status": "FLAGGED_FOR_REVIEW",
+      "notes": "Snowflake-only extension column with no equivalent in Teradata/Databricks. Not migrated to unified model. Review whether any downstream consumers depend on this data."
+    }
+  ]
+}
