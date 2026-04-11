@@ -1,0 +1,48 @@
+/*******************************************************************************
+ * customer_psv_export.bteq
+ *
+ * Exports current customer dimension data to a pipe-separated (PSV) report
+ * file for downstream consumption (e.g. regulatory feeds, CRM integration).
+ *
+ * Migrated from COG-GTM/Teradata-Utilities-Script Export.bteq.txt
+ * Original pattern: .EXPORT REPORT with pipe separator
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+DATABASE BARCLAYS_DWH;
+
+.SET WIDTH 500
+.SET TITLEDASHES OFF
+
+/*---------------------------------------------------------------------------
+ * Export customer data as pipe-delimited report
+ *---------------------------------------------------------------------------*/
+.EXPORT REPORT FILE=${EXPORT_DIR}/customer_psv_export_${YYYYMMDD}.txt
+
+.SET SEPARATOR '|'
+
+SELECT
+    customer_id,
+    first_name,
+    last_name,
+    date_of_birth (FORMAT 'YYYY-MM-DD'),
+    nationality,
+    kyc_status,
+    risk_rating,
+    segment,
+    postcode,
+    country,
+    effective_from (FORMAT 'YYYY-MM-DD'),
+    effective_to (FORMAT 'YYYY-MM-DD'),
+    is_current
+FROM BARCLAYS_DWH.DIM_CUSTOMER
+WHERE is_current = 'Y'
+ORDER BY customer_id;
+
+.EXPORT RESET
+
+SELECT 'Exported ' || CAST(ACTIVITYCOUNT AS VARCHAR(20)) || ' customer records (PSV format)';
+
+.LOGOFF;
+.QUIT 0;

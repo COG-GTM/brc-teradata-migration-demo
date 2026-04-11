@@ -1,0 +1,46 @@
+/*******************************************************************************
+ * conditional_batch_runner.bteq
+ *
+ * Checks whether the customer snapshot table contains data before
+ * executing a downstream batch script. Exits gracefully if no data
+ * is available, preventing unnecessary processing.
+ *
+ * Migrated from COG-GTM/Teradata-Utilities-Script Condbteq2.bteq
+ * Original pattern: SELECT COUNT → conditional .QUIT / .RUN FILE
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+DATABASE BARCLAYS_DWH;
+
+.SET WIDTH 200
+
+/*---------------------------------------------------------------------------
+ * Pre-flight: verify snapshot data exists
+ *---------------------------------------------------------------------------*/
+SELECT 1
+FROM BARCLAYS_DWH.DIM_CUSTOMER_SNAPSHOT
+SAMPLE 1;
+
+.IF ACTIVITYCOUNT = 0 THEN .GOTO NODATA
+
+/*---------------------------------------------------------------------------
+ * Data present — execute the downstream batch
+ *---------------------------------------------------------------------------*/
+SELECT 'Snapshot data found. Running downstream batch at '
+    || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+
+.RUN FILE=${BATCH_SCRIPT_DIR}/customer_risk_batch.bteq
+
+.GOTO FINISH
+
+/*---------------------------------------------------------------------------
+ * No-data handler
+ *---------------------------------------------------------------------------*/
+.LABEL NODATA
+SELECT 'WARNING: No customer snapshot data found. Batch skipped at '
+    || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+
+.LABEL FINISH
+.LOGOFF;
+.QUIT 0;

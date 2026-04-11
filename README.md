@@ -87,9 +87,30 @@ barclays-teradata-migration-demo/
 │   ├── stored_procedures/             # Complex ETL logic
 │   ├── macros/                        # Teradata macros
 │   ├── bteq/                          # Batch scripts
+│   │   ├── customer_export.bteq              # Customer dimension PSV export
+│   │   ├── customer_table_refresh.bteq       # Conditional table refresh (delete/create/insert)
+│   │   ├── conditional_batch_runner.bteq     # Conditional execution based on data presence
+│   │   ├── customer_psv_export.bteq          # Pipe-delimited customer export
+│   │   ├── customer_csv_export.bteq          # CSV customer export via concatenation
+│   │   ├── daily_batch_load.bteq             # Daily ETL orchestration
+│   │   └── monthly_regulatory_report.bteq    # Month-end regulatory batch
 │   ├── tpt/                           # Teradata Parallel Transporter jobs
+│   │   ├── customer_export.tpt               # Customer dimension export (Selector)
+│   │   ├── customer_dimension_export.tpt     # Customer export via EXPORT operator
+│   │   ├── customer_data_export.tpt          # Customer export (env-override variant)
+│   │   ├── customer_tpt_load.tpt             # Customer bulk load (LOAD operator)
+│   │   └── transaction_load.tpt              # Transaction data load
 │   ├── fastload/                      # FastLoad scripts
+│   │   ├── market_data_load.fl               # Market data bulk load
+│   │   └── customer_bulk_load.fl             # Customer data bulk load
+│   ├── fastexport/                    # FastExport scripts
+│   │   ├── customer_export.fexp              # Customer data high-volume extract
+│   │   └── customer_segment_export.fexp      # Segment-partitioned customer extract
 │   ├── multiload/                     # MultiLoad scripts
+│   │   ├── account_balance_upsert.ml         # Daily balance upsert
+│   │   ├── customer_insert.ml                # Customer insert via MultiLoad
+│   │   ├── customer_delete.ml                # Customer staging table clear
+│   │   └── customer_upsert.ml                # Customer upsert (update + insert)
 │   └── scheduled_jobs/                # Job sequences
 ├── dbt_project/                       # Migrated dbt Core project
 │   ├── models/staging/                # 1:1 source mirrors
@@ -147,7 +168,7 @@ dbt test
 
 ## Related Resources
 
-- [COG-GTM/Teradata-Utilities-Script](https://github.com/COG-GTM/Teradata-Utilities-Script) -- Additional Teradata utility examples (BTEQ, FastLoad, MultiLoad, TPT)
+- [COG-GTM/Teradata-Utilities-Script](https://github.com/COG-GTM/Teradata-Utilities-Script) -- Source utility scripts migrated into this repo's `teradata/` directory
 - [dbt Documentation](https://docs.getdbt.com/)
 - [Snowflake Migration Guide](https://docs.snowflake.com/en/user-guide/migration-teradata.html)
 - [Databricks Migration Guide](https://docs.databricks.com/en/migration/teradata.html)

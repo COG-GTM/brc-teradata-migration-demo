@@ -1,0 +1,57 @@
+/*******************************************************************************
+ * customer_segment_export.fexp
+ *
+ * FastExport script that produces separate export files per customer segment.
+ * Uses multiple BEGIN EXPORT / END EXPORT blocks to partition the output
+ * by segment (RETAIL vs WEALTH/CORPORATE).
+ *
+ * Migrated from COG-GTM/Teradata-Utilities-Script FastExport_1.fexp.txt
+ * Original pattern: multiple export blocks with WHERE filters
+ ******************************************************************************/
+
+.LOGTABLE BARCLAYS_DWH.CUST_SEG_FEXP_LOG;
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+/*---------------------------------------------------------------------------
+ * Export 1: Retail customers
+ *---------------------------------------------------------------------------*/
+.BEGIN EXPORT SESSIONS 4;
+
+.EXPORT OUTFILE ${EXPORT_DIR}/customer_retail_${YYYYMMDD}.dat
+MODE RECORD FORMAT TEXT;
+
+SELECT
+    CAST(customer_id AS CHAR(10)),
+    CAST(first_name AS CHAR(100)),
+    CAST(last_name AS CHAR(100)),
+    CAST(kyc_status AS CHAR(20)),
+    CAST(risk_rating AS CHAR(1)),
+    CAST(segment AS CHAR(20))
+FROM BARCLAYS_DWH.DIM_CUSTOMER
+WHERE is_current = 'Y'
+  AND segment = 'RETAIL';
+
+.END EXPORT;
+
+/*---------------------------------------------------------------------------
+ * Export 2: Wealth and corporate customers
+ *---------------------------------------------------------------------------*/
+.BEGIN EXPORT SESSIONS 4;
+
+.EXPORT OUTFILE ${EXPORT_DIR}/customer_wealth_corporate_${YYYYMMDD}.dat
+MODE RECORD FORMAT TEXT;
+
+SELECT
+    CAST(customer_id AS CHAR(10)),
+    CAST(first_name AS CHAR(100)),
+    CAST(last_name AS CHAR(100)),
+    CAST(kyc_status AS CHAR(20)),
+    CAST(risk_rating AS CHAR(1)),
+    CAST(segment AS CHAR(20))
+FROM BARCLAYS_DWH.DIM_CUSTOMER
+WHERE is_current = 'Y'
+  AND segment IN ('WEALTH', 'CORPORATE');
+
+.END EXPORT;
+
+.LOGOFF;

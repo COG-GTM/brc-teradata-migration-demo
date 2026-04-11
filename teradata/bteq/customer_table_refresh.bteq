@@ -1,0 +1,79 @@
+/*******************************************************************************
+ * customer_table_refresh.bteq
+ *
+ * Conditional table refresh script for the customer snapshot table.
+ * Attempts to clear existing data; if the table does not exist, creates it
+ * and then populates from the master customer table.
+ *
+ * Migrated from COG-GTM/Teradata-Utilities-Script Condbteq.bteq
+ * Original pattern: DELETE → conditional CREATE → INSERT from source
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+DATABASE BARCLAYS_DWH;
+
+.SET WIDTH 200
+
+/*---------------------------------------------------------------------------
+ * Attempt to clear the snapshot table
+ *---------------------------------------------------------------------------*/
+DELETE FROM BARCLAYS_DWH.DIM_CUSTOMER_SNAPSHOT;
+
+.IF ERRORCODE = 0 THEN .GOTO POPULATE_SNAPSHOT
+
+/*---------------------------------------------------------------------------
+ * Table does not exist — create it
+ *---------------------------------------------------------------------------*/
+CREATE MULTISET TABLE BARCLAYS_DWH.DIM_CUSTOMER_SNAPSHOT, NO FALLBACK,
+    NO BEFORE JOURNAL,
+    NO AFTER JOURNAL,
+    CHECKSUM = DEFAULT,
+    DEFAULT MERGEBLOCKRATIO
+(
+    customer_id         INTEGER          NOT NULL,
+    first_name          VARCHAR(100)     CHARACTER SET LATIN NOT CASESPECIFIC,
+    last_name           VARCHAR(100)     CHARACTER SET LATIN NOT CASESPECIFIC,
+    date_of_birth       DATE FORMAT 'YYYY-MM-DD',
+    nationality         CHAR(2)          CHARACTER SET LATIN NOT CASESPECIFIC,
+    kyc_status          VARCHAR(20)      CHARACTER SET LATIN NOT CASESPECIFIC,
+    risk_rating         CHAR(1)          CHARACTER SET LATIN NOT CASESPECIFIC,
+    segment             VARCHAR(20)      CHARACTER SET LATIN NOT CASESPECIFIC,
+    postcode            VARCHAR(10)      CHARACTER SET LATIN NOT CASESPECIFIC,
+    country             CHAR(2)          CHARACTER SET LATIN NOT CASESPECIFIC,
+    is_current          CHAR(1)          CHARACTER SET LATIN NOT CASESPECIFIC,
+    snapshot_date       DATE FORMAT 'YYYY-MM-DD' DEFAULT CURRENT_DATE,
+    etl_loaded_ts       TIMESTAMP(6)     DEFAULT CURRENT_TIMESTAMP(6)
+)
+PRIMARY INDEX (customer_id);
+
+/*---------------------------------------------------------------------------
+ * Populate from the current customer dimension
+ *---------------------------------------------------------------------------*/
+.LABEL POPULATE_SNAPSHOT
+
+INSERT INTO BARCLAYS_DWH.DIM_CUSTOMER_SNAPSHOT
+(
+    customer_id, first_name, last_name, date_of_birth,
+    nationality, kyc_status, risk_rating, segment,
+    postcode, country, is_current, snapshot_date, etl_loaded_ts
+)
+SELECT
+    customer_id, first_name, last_name, date_of_birth,
+    nationality, kyc_status, risk_rating, segment,
+    postcode, country, is_current, CURRENT_DATE, CURRENT_TIMESTAMP(6)
+FROM BARCLAYS_DWH.DIM_CUSTOMER
+WHERE is_current = 'Y';
+
+.IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER
+
+SELECT 'Customer snapshot refreshed. Rows inserted: ' || CAST(ACTIVITYCOUNT AS VARCHAR(20));
+.GOTO FINISH
+
+.LABEL ERRORHANDLER
+SELECT 'ERROR: Customer table refresh failed at ' || CAST(CURRENT_TIMESTAMP AS VARCHAR(30));
+.QUIT 12
+
+.LABEL FINISH
+.LOGOFF;
+.QUIT 0;

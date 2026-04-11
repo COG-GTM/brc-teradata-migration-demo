@@ -1,0 +1,77 @@
+/*******************************************************************************
+ * customer_bulk_load.fl
+ *
+ * FastLoad script to bulk-load customer records from a pipe-delimited flat
+ * file into the BARCLAYS_RAW.CUSTOMER_STAGING table.
+ *
+ * FastLoad is suited for initial / full loads into empty tables.
+ * For incremental updates, use MultiLoad or TPT Load instead.
+ *
+ * Migrated from COG-GTM/Teradata-Utilities-Script Customer_fastload.fl.txt
+ ******************************************************************************/
+
+.LOGON ${TERADATA_HOST}/barclays_etl,${ETL_PASSWORD};
+
+DATABASE BARCLAYS_RAW;
+
+/* Drop error tables from any previous failed run */
+DROP TABLE BARCLAYS_RAW.CUST_FL_ET;
+DROP TABLE BARCLAYS_RAW.CUST_FL_UV;
+
+BEGIN LOADING BARCLAYS_RAW.CUSTOMER_STAGING
+ERRORFILES BARCLAYS_RAW.CUST_FL_ET, BARCLAYS_RAW.CUST_FL_UV
+CHECKPOINT 5000;
+
+SET RECORD VARTEXT '|';
+
+DEFINE
+in_customer_id      (VARCHAR(10)),
+in_first_name       (VARCHAR(100)),
+in_last_name        (VARCHAR(100)),
+in_date_of_birth    (VARCHAR(10)),
+in_nationality      (VARCHAR(2)),
+in_kyc_status       (VARCHAR(20)),
+in_risk_rating      (VARCHAR(1)),
+in_onboarding_date  (VARCHAR(10)),
+in_segment          (VARCHAR(20)),
+in_email            (VARCHAR(255)),
+in_phone_number     (VARCHAR(20)),
+in_postcode         (VARCHAR(10)),
+in_country          (VARCHAR(2))
+FILE=${INPUT_DIR}/customer_load_${YYYYMMDD}.dat;
+
+INSERT INTO BARCLAYS_RAW.CUSTOMER_STAGING
+(
+    customer_id,
+    first_name,
+    last_name,
+    date_of_birth,
+    nationality,
+    kyc_status,
+    risk_rating,
+    onboarding_date,
+    segment,
+    email,
+    phone_number,
+    postcode,
+    country
+)
+VALUES
+(
+    CAST(:in_customer_id AS INTEGER),
+    :in_first_name,
+    :in_last_name,
+    CAST(:in_date_of_birth AS DATE FORMAT 'YYYY-MM-DD'),
+    :in_nationality,
+    :in_kyc_status,
+    :in_risk_rating,
+    CAST(:in_onboarding_date AS DATE FORMAT 'YYYY-MM-DD'),
+    :in_segment,
+    :in_email,
+    :in_phone_number,
+    :in_postcode,
+    :in_country
+);
+
+END LOADING;
+LOGOFF;
