@@ -4,11 +4,15 @@ on:
   pull_request:
     paths:
       - 'dbt_project/**'
+      - 'sample_data/**'
+      - '.github/workflows/dbt_ci.yml'
   push:
     branches:
       - main
     paths:
       - 'dbt_project/**'
+      - 'sample_data/**'
+      - '.github/workflows/dbt_ci.yml'
 
 jobs:
   dbt-build:

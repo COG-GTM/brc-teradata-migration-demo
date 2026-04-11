@@ -13,7 +13,7 @@
         mod(abs(conv(substring({{ hash_expr }}, 1, 8), 16, 10)), {{ num_buckets }})
     {% else %}
         {# Postgres / default #}
-        mod(abs(('x' || substring({{ hash_expr }}, 1, 8))::bit(32)::int), {{ num_buckets }})
+        mod(abs(('x' || substring({{ hash_expr }}, 1, 8))::bit(32)::bigint), {{ num_buckets }})
     {% endif %}
 
 {% endmacro %}

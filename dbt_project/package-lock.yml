@@ -6,9 +6,9 @@ packages:
     package: dbt-labs/codegen
     version: 0.14.0
   - name: dbt_expectations
-    package: calogica/dbt_expectations
-    version: 0.10.4
+    package: metaplane/dbt_expectations
+    version: 0.10.10
   - name: dbt_date
-    package: calogica/dbt_date
-    version: 0.10.1
-sha1_hash: 0f8a0c4be8fef0ab7a0dbd977b70dfd62860fc0e
+    package: godatadriven/dbt_date
+    version: 0.17.2
+sha1_hash: da32f72e71bb4d3c1115e3aff4ac4d0fec2cb996
