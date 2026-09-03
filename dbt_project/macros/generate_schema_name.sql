@@ -3,6 +3,11 @@
 -- custom schema name instead of prepending the target schema.
 -- This ensures seeds land in "raw" (not "public_raw") and models land in
 -- "staging", "finance", etc., matching the source definitions.
+--
+-- Platform note: this is dialect-independent. On Databricks with Unity Catalog
+-- the catalog comes from the profile (`catalog:`), and the value returned here
+-- is the schema (database) within that catalog, so absolute names such as
+-- "raw" resolve to <catalog>.raw.
 
 {% macro generate_schema_name(custom_schema_name, node) -%}
 
