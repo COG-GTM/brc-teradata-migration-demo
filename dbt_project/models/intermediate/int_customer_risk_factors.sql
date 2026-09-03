@@ -6,6 +6,16 @@
 --   NULLIFZERO(x)                  -> nullif(x, 0)
 --   (date - date_of_birth) / 365   -> datediff('year', date_of_birth, current_date)
 --   HASHBUCKET(HASHROW(x)) MOD 10  -> mod(abs(hash(x)), 10)
+--
+-- Databricks dialect notes:
+--   * datediff() is namespaced as dbt.datediff() so the cross-database shim is
+--     used everywhere; Spark's built-in datediff() takes only two arguments and
+--     would otherwise shadow the three-argument Teradata-style call.
+--   * GROUP BY ordinals are spelled out as column references: Databricks honours
+--     ordinals only while spark.sql.groupByOrdinal is enabled, and explicit
+--     columns keep the grouping unambiguous when this ephemeral model is inlined.
+--   * The hash bucket is routed through the teradata_compat hash_to_int_bucket()
+--     macro, which emits conv(..., 16, 10) on Databricks.
 
 with customer_accounts as (
 
@@ -18,10 +28,10 @@ with customer_accounts as (
         c.date_of_birth,
 
         -- Age calculation (replaces Teradata date arithmetic)
-        {{ datediff('c.date_of_birth', 'current_date', 'year') }} as customer_age,
+        {{ dbt.datediff('c.date_of_birth', 'current_date', 'year') }} as customer_age,
 
         -- Tenure in years
-        {{ datediff('c.onboarding_date', 'current_date', 'year') }} as tenure_years,
+        {{ dbt.datediff('c.onboarding_date', 'current_date', 'year') }} as tenure_years,
 
         count(distinct a.account_id) as account_count,
         sum(case when a.status = 'ACTIVE' then 1 else 0 end) as active_account_count
@@ -29,7 +39,13 @@ with customer_accounts as (
     from {{ ref('stg_customers') }} c
     left join {{ ref('stg_accounts') }} a
         on c.customer_id = a.customer_id
-    group by 1, 2, 3, 4, 5, 6
+    group by
+        c.customer_id,
+        c.kyc_status,
+        c.risk_rating,
+        c.segment,
+        c.onboarding_date,
+        c.date_of_birth
 
 ),
 
@@ -47,7 +63,7 @@ transaction_metrics as (
     from {{ ref('stg_accounts') }} a
     inner join {{ ref('stg_transactions') }} t
         on a.account_id = t.account_id
-    group by 1
+    group by a.customer_id
 
 ),
 

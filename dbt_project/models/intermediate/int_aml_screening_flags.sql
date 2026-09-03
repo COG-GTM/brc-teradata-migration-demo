@@ -5,6 +5,16 @@
 --   SOUNDEX(x)                       -> soundex(x) (available in Snowflake)
 --   OREPLACE(x, y, z)               -> replace(x, y, z)
 --   OTRANSLATE(x, y, z)             -> translate(x, y, z)
+--
+-- Databricks dialect notes:
+--   * No inline QUALIFY: the alert set is de-duplicated by grouping, and any
+--     ranking needed downstream uses the teradata_compat qualify_row_number()
+--     macro, since Spark SQL only added QUALIFY in recent runtimes.
+--   * current_timestamp is emitted via dbt.current_timestamp() so the cast is
+--     consistent across Snowflake, Databricks and Postgres.
+--   * UNION ALL branches list columns explicitly: Spark resolves UNION ALL by
+--     position, so an implicit `select *` would silently mis-align columns if any
+--     branch changed.
 
 with enriched_txns as (
 
@@ -85,20 +95,58 @@ sanctions_flags as (
         'Transaction with sanctioned counterparty' as alert_description
 
     from enriched_txns
-    where counterparty_is_sanctioned = true
+    where counterparty_is_sanctioned
     group by customer_id, customer_name, transaction_date
 
 ),
 
 all_flags as (
 
-    select * from structuring_flags
+    select
+        customer_id,
+        customer_name,
+        transaction_date,
+        alert_type,
+        supporting_transaction_count,
+        total_amount,
+        alert_description
+    from structuring_flags
+
     union all
-    select * from velocity_flags
+
+    select
+        customer_id,
+        customer_name,
+        transaction_date,
+        alert_type,
+        supporting_transaction_count,
+        total_amount,
+        alert_description
+    from velocity_flags
+
     union all
-    select * from high_risk_country_flags
+
+    select
+        customer_id,
+        customer_name,
+        transaction_date,
+        alert_type,
+        supporting_transaction_count,
+        total_amount,
+        alert_description
+    from high_risk_country_flags
+
     union all
-    select * from sanctions_flags
+
+    select
+        customer_id,
+        customer_name,
+        transaction_date,
+        alert_type,
+        supporting_transaction_count,
+        total_amount,
+        alert_description
+    from sanctions_flags
 
 )
 
@@ -118,6 +166,6 @@ select
         when alert_type = 'HIGH_RISK_COUNTRY' then 'MEDIUM'
         else 'LOW'
     end as alert_severity,
-    current_timestamp as screened_at
+    {{ dbt.current_timestamp() }} as screened_at
 
 from all_flags

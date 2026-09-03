@@ -1,5 +1,15 @@
 -- Enriched transactions joined with account and counterparty data.
 -- This model provides the denormalized transaction view used by downstream marts.
+--
+-- Databricks dialect notes:
+--   * String concatenation goes through dbt.concat() instead of the `||` operator,
+--     which Spark SQL only treats as concatenation when
+--     spark.sql.ansi.enabled/legacy settings line up.
+--   * Boolean literals in comparisons and coalesce() are kept as true/false rather
+--     than 1/0 so the Delta column type stays BOOLEAN.
+--   * Every CTE alias is unique and no CTE name collides with a downstream mart
+--     CTE, which matters because this ephemeral model is inlined as
+--     __dbt__cte__int_transaction_enriched into consumers.
 
 with transactions as (
 
@@ -46,7 +56,7 @@ enriched as (
         a.status as account_status,
 
         -- Customer context
-        c.first_name || ' ' || c.last_name as customer_name,
+        {{ dbt.concat(["c.first_name", "' '", "c.last_name"]) }} as customer_name,
         c.segment as customer_segment,
         c.risk_rating as customer_risk_rating,
 
@@ -65,7 +75,7 @@ enriched as (
         end as is_high_risk_counterparty,
 
         case
-            when t.amount >= 10000 then true
+            when coalesce(t.amount, 0) >= 10000 then true
             else false
         end as is_reportable_transaction
 
