@@ -5,6 +5,9 @@ models:
     description: >
       Daily transaction fact table for finance reporting.
       Migrated from: teradata/ddl/04_warehouse_tables.sql (FCT_TRANSACTION).
+      On Databricks: Delta, incremental MERGE on transaction_id, partitioned by
+      transaction_date (Teradata PPI equivalent) with a ZORDER BY
+      (account_id, counterparty_id) post-hook.
     columns:
       - name: transaction_id
         description: Unique transaction identifier
@@ -40,6 +43,8 @@ models:
       Monthly profit and loss aggregation by business line and product type.
       Migrated from: teradata/stored_procedures/sp_monthly_pnl_rollup.sql.
       Replaces Teradata GROUP BY ROLLUP and CSUM/MAVG OLAP functions.
+      On Databricks: Delta, liquid clustering on (reporting_month, business_line);
+      too few rows per month to justify partitioning.
     columns:
       - name: pnl_id
         tests:
@@ -64,6 +69,8 @@ models:
     description: >
       Account dimension with current state.
       Migrated from: teradata/ddl/04_warehouse_tables.sql (DIM_ACCOUNT).
+      On Databricks: Delta, liquid clustering on (account_id, customer_id)
+      mirroring the Teradata PRIMARY INDEX; no date partitioning.
     columns:
       - name: account_id
         description: Unique account identifier
@@ -84,3 +91,5 @@ models:
         tests:
           - accepted_values:
               values: ['NEW', 'ESTABLISHED', 'MATURE']
+      - name: customer_name
+        description: Concatenation of customer first and last name.

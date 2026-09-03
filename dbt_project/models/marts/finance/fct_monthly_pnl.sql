@@ -5,11 +5,27 @@
 --   CSUM (running total)             -> sum() over (order by)
 --   MAVG (moving average)            -> avg() over (rows between)
 --   EXTRACT(YEAR/MONTH FROM x)       -> date_trunc / extract
+--
+-- Databricks physical design:
+--   Delta file format. The table holds a handful of rows per month per business
+--   line, so partitioning on reporting_month would produce many tiny files.
+--   Liquid clustering on (reporting_month, business_line) instead: reporting_month
+--   is the dominant range filter and business_line the dominant equality filter,
+--   and liquid clustering re-balances incrementally without a ZORDER pass.
+--   Snowflake keeps an automatic clustering key on the same columns.
+
+{{
+    config(
+        file_format='delta' if target.type == 'databricks' else none,
+        liquid_clustered_by=['reporting_month', 'business_line'] if target.type == 'databricks' else none,
+        cluster_by=['reporting_month', 'business_line'] if target.type == 'snowflake' else none
+    )
+}}
 
 with monthly_detail as (
 
     select
-        date_trunc('month', t.transaction_date) as reporting_month,
+        cast(date_trunc('month', t.transaction_date) as date) as reporting_month,
 
         -- Business line from account type
         case
@@ -57,7 +73,7 @@ pnl_summary as (
         sum(interest_income + fee_income - interest_expense) over (
             partition by business_line, extract(year from reporting_month)
             order by reporting_month
-            rows unbounded preceding
+            rows between unbounded preceding and current row
         ) as ytd_net_revenue,
 
         -- 3-month moving average (replaces Teradata MAVG)
@@ -87,7 +103,8 @@ select
     transaction_count,
     case
         when gross_revenue > 0
-            then interest_expense / gross_revenue
+            then cast(interest_expense as {{ dbt.type_numeric() }})
+                 / cast(gross_revenue as {{ dbt.type_numeric() }})
         else null
     end as cost_income_ratio,
     current_timestamp as etl_loaded_ts
