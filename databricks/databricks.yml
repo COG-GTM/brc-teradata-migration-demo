@@ -1,0 +1,79 @@
+# =============================================================================
+# databricks.yml — Databricks Asset Bundle root
+#
+# Replaces: the UC4/AutoSys/Control-M job definitions described in
+#           teradata/scheduled_jobs/daily_etl_sequence.txt and
+#           teradata/scheduled_jobs/monthly_regulatory_sequence.txt
+#
+# Mapping rationale:
+#   The legacy sequences were maintained in an external enterprise scheduler,
+#   with job names, cron windows and dependency edges kept outside version
+#   control. An asset bundle puts the same graph in the repo: deploy with
+#     cd databricks && databricks bundle deploy -t dev
+#     databricks bundle run brcl_daily_etl -t dev
+#
+#   `run_as` and the service-principal identity replace the barclays_etl
+#   Teradata logon used by every .LOGON in the legacy scripts; credentials come
+#   from the workspace identity rather than ${ETL_PASSWORD}.
+# =============================================================================
+
+bundle:
+  name: brcl_teradata_migration
+
+include:
+  - jobs/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog holding the migrated warehouse (was BARCLAYS_* databases)
+    default: barclays
+  schema_raw:
+    description: Bronze schema (was BARCLAYS_RAW)
+    default: raw
+  schema_dwh:
+    description: Warehouse schema (was BARCLAYS_DWH)
+    default: dwh
+  schema_staging:
+    description: dbt staging schema (was the BARCLAYS_STG views)
+    default: staging
+  schema_finance:
+    description: Finance mart schema (was BARCLAYS_MART finance tables)
+    default: finance
+  schema_risk:
+    description: Risk mart schema
+    default: risk
+  schema_compliance:
+    description: Compliance mart schema
+    default: compliance
+  landing_path:
+    description: Unity Catalog volume replacing ${INPUT_DIR} on the ETL server
+    default: /Volumes/barclays/raw/landing
+  export_path:
+    description: Unity Catalog volume replacing ${EXPORT_DIR} on the ETL server
+    default: /Volumes/barclays/raw/exports
+  checkpoint_path:
+    description: Auto Loader checkpoints (replaces FastLoad CHECKPOINT restart state)
+    default: /Volumes/barclays/raw/_checkpoints
+  warehouse_id:
+    description: SQL warehouse used by the dbt and SQL tasks
+    default: ""
+  delimiter:
+    description: Landing-file delimiter; '|' for legacy VARTEXT extracts, ',' for sample_data CSVs
+    default: ","
+  notification_email:
+    description: Ops distribution list (replaces BRCL_*_NOTIFICATION email jobs)
+    default: data-ops@example.com
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      catalog: barclays_dev
+  prod:
+    mode: production
+    variables:
+      catalog: barclays
+    run_as:
+      # Service principal replacing the barclays_etl Teradata ETL user.
+      service_principal_name: ${workspace.current_user.userName}
