@@ -7,6 +7,9 @@ models:
       Migrated from: teradata/stored_procedures/sp_daily_transaction_load.sql
       (balance calculation section).
       Replaces Teradata MERGE INTO with dbt incremental materialization.
+      On Databricks this is a Delta table loaded with the `merge` incremental
+      strategy and liquid clustering on (account_id, balance_date); on other
+      platforms the adapter default incremental strategy applies.
     columns:
       - name: account_id
         tests:
@@ -29,6 +32,9 @@ models:
       Aggregated risk factors per customer for credit scoring.
       Migrated from: teradata/stored_procedures/sp_customer_risk_scoring.sql.
       Replaces Teradata VOLATILE TABLE, QUALIFY, ZEROIFNULL, and HASHROW.
+      Date arithmetic uses dbt.datediff() and the hash bucket uses the
+      teradata_compat hash_to_int_bucket() macro so the SQL is valid on
+      Databricks as well as Snowflake and Postgres.
     columns:
       - name: customer_id
         tests:
@@ -47,6 +53,8 @@ models:
     description: >
       Transactions enriched with account and counterparty details.
       Joins staging models to provide a denormalized transaction view.
+      Ephemeral: inlined into downstream marts as a CTE, so concatenation uses
+      dbt.concat() and CTE aliases are unique to stay Databricks-safe.
     columns:
       - name: transaction_id
         tests:
@@ -58,7 +66,8 @@ models:
       AML/sanctions screening flags derived from transaction patterns.
       Migrated from: teradata/stored_procedures/sp_aml_screening.sql.
       Replaces Teradata LIKE ANY, SOUNDEX, OREPLACE, OTRANSLATE,
-      and VOLATILE TABLE patterns.
+      and VOLATILE TABLE patterns. UNION ALL branches are column-explicit and
+      timestamps use dbt.current_timestamp() for Databricks compatibility.
     columns:
       - name: alert_id
         tests:

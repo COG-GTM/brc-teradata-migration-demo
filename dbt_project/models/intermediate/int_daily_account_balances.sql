@@ -4,13 +4,34 @@
 --   MERGE INTO ... WHEN MATCHED / NOT MATCHED -> dbt incremental
 --   ZEROIFNULL(x)                             -> coalesce(x, 0)
 --   COLLECT STATISTICS                        -> not needed
+--
+-- Databricks dialect notes:
+--   * Row-value (tuple) IN sub-queries -- `where (a, b) in (select a, max(b) ...)` --
+--     are not portable to Spark SQL; the latest balance per account is now selected
+--     with a row_number() window instead.
+--   * Spark SQL rejects a `select ... where ...` with no `from` clause, so the
+--     first-run placeholder branch selects from a one-row inline sub-query.
+--   * Numeric literal casts use dbt.type_numeric() rather than a hard-coded
+--     `numeric`, which is not the canonical Databricks type name.
 
+{% if target.type == 'databricks' %}
+{{
+    config(
+        materialized='incremental',
+        unique_key=['account_id', 'balance_date'],
+        incremental_strategy='merge',
+        file_format='delta',
+        liquid_clustered_by=['account_id', 'balance_date']
+    )
+}}
+{% else %}
 {{
     config(
         materialized='incremental',
         unique_key=['account_id', 'balance_date']
     )
 }}
+{% endif %}
 
 with daily_transactions as (
 
@@ -37,17 +58,23 @@ prior_balances as (
     {% if is_incremental() %}
     select
         account_id,
-        closing_balance as prior_closing_balance
-    from {{ this }}
-    where (account_id, balance_date) in (
-        select account_id, max(balance_date)
+        prior_closing_balance
+    from (
+        select
+            account_id,
+            closing_balance as prior_closing_balance,
+            row_number() over (
+                partition by account_id
+                order by balance_date desc
+            ) as _rn
         from {{ this }}
-        group by account_id
-    )
+    ) latest_balance
+    where _rn = 1
     {% else %}
     select
         cast(null as {{ dbt.type_string() }}) as account_id,
-        cast(0 as numeric) as prior_closing_balance
+        cast(0 as {{ dbt.type_numeric() }}) as prior_closing_balance
+    from (select 1 as _placeholder) _empty_source
     where 1 = 0
     {% endif %}
 
