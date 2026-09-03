@@ -1,8 +1,14 @@
 -- Migrated from: teradata/ddl/03_staging_views.sql (V_ACCOUNT_CURRENT)
 -- Teradata constructs replaced:
---   ZEROIFNULL(x)         -> coalesce(x, 0)
---   date - date = integer -> datediff('day', date1, date2)
+--   ZEROIFNULL(x)         -> zeroifnull() compat macro
+--   date - date = integer -> datediff() cross-database macro
 --   LOCK ROW FOR ACCESS   -> removed
+--
+-- Databricks notes:
+--   * `current_date` is used without parentheses so the same SQL parses on
+--     Databricks, Snowflake and Postgres.
+--   * dates are cast explicitly because Databricks infers string for
+--     CSV/CTAS-loaded landing columns.
 
 with source as (
 
@@ -19,8 +25,8 @@ cleaned as (
         upper(trim(currency)) as currency,
         branch_code,
         upper(trim(status)) as status,
-        open_date,
-        close_date,
+        cast(open_date as date) as open_date,
+        cast(close_date as date) as close_date,
 
         -- Derived: is the account currently open?
         case
@@ -30,8 +36,7 @@ cleaned as (
 
         -- Derived: days since account opened
         -- Teradata: CURRENT_DATE - open_date (returns integer)
-        -- dbt cross-database macro for compatibility
-        {{ datediff('open_date', 'current_date', 'day') }} as days_since_opening
+        {{ datediff('cast(open_date as date)', 'current_date', 'day') }} as days_since_opening
 
     from source
     where upper(trim(status)) != 'CLOSED'

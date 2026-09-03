@@ -5,8 +5,16 @@ sources:
     description: >
       Raw landing zone tables migrated from the Teradata BARCLAYS_RAW database.
       These tables are loaded by upstream ETL processes (previously TPT/FastLoad/MultiLoad).
-    database: "{{ env_var('DBT_RAW_DATABASE', 'barclays_migration') }}"
-    schema: "{{ env_var('DBT_RAW_SCHEMA', 'raw') }}"
+    # Identifiers are declared in lower case and quoting is disabled so the
+    # same source resolves on Databricks (lower-case, unquoted identifiers;
+    # `database` maps to the Unity Catalog catalog), Snowflake (which
+    # upper-cases unquoted identifiers) and Postgres.
+    database: "{{ env_var('DBT_RAW_DATABASE', 'barclays_migration') | lower }}"
+    schema: "{{ env_var('DBT_RAW_SCHEMA', 'raw') | lower }}"
+    quoting:
+      database: false
+      schema: false
+      identifier: false
     loader: external_etl
     # Source freshness monitoring — disabled for CI (seeds lack etl_loaded_ts).
     # Enable for production by uncommenting the lines below.
