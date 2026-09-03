@@ -1,5 +1,21 @@
 -- Migrated from: teradata/ddl/04_warehouse_tables.sql (DIM_ACCOUNT)
 -- Account dimension with current state and derived attributes.
+--
+-- Databricks physical design:
+--   Delta file format, no partitioning. The dimension is small (one row per
+--   account) so date partitioning would only create many tiny files.
+--   Liquid clustering on (account_id, customer_id): both are high-cardinality
+--   keys used for the fact-to-dimension joins and for point lookups, and
+--   liquid clustering keeps them co-located without a manual OPTIMIZE pass.
+--   Teradata equivalent: PRIMARY INDEX (account_id).
+
+{{
+    config(
+        file_format='delta' if target.type == 'databricks' else none,
+        liquid_clustered_by=['account_id', 'customer_id'] if target.type == 'databricks' else none,
+        cluster_by=['account_id'] if target.type == 'snowflake' else none
+    )
+}}
 
 with accounts as (
 
@@ -16,7 +32,9 @@ customers as (
 select
     a.account_id,
     a.customer_id,
-    c.first_name || ' ' || c.last_name as customer_name,
+    -- concat() rather than '||' so the expression behaves identically on
+    -- Databricks (Spark), Snowflake and Postgres.
+    concat(c.first_name, ' ', c.last_name) as customer_name,
     c.segment as customer_segment,
     a.account_type,
     a.currency,
