@@ -1,8 +1,12 @@
 -- Migrated from: teradata/ddl/03_staging_views.sql (V_CUSTOMER_LATEST)
 -- Teradata constructs replaced:
---   QUALIFY ROW_NUMBER() -> sub-query with window function
---   LOCK ROW FOR ACCESS  -> removed (not needed in Snowflake/Databricks)
---   NOT CASESPECIFIC     -> removed (Snowflake is case-insensitive by default)
+--   QUALIFY ROW_NUMBER() -> qualify_row_number() compat macro
+--                           (native QUALIFY on Snowflake, sub-query on
+--                            Databricks / Postgres)
+--   LOCK ROW FOR ACCESS  -> removed (not needed in Databricks/Snowflake)
+--   NOT CASESPECIFIC     -> removed; comparisons are normalised with upper()
+--                           because Databricks string comparison IS case
+--                           sensitive (unlike Teradata NOT CASESPECIFIC)
 
 with source as (
 
@@ -10,37 +14,34 @@ with source as (
 
 ),
 
-deduplicated as (
+cleaned as (
 
     select
         customer_id,
         first_name,
         last_name,
-        date_of_birth,
+        cast(date_of_birth as date) as date_of_birth,
         nationality,
         upper(trim(kyc_status)) as kyc_status,
         upper(trim(risk_rating)) as risk_rating,
-        onboarding_date,
-        upper(trim(segment)) as segment,
-        row_number() over (
-            partition by customer_id
-            order by onboarding_date desc
-        ) as row_num
+        cast(onboarding_date as date) as onboarding_date,
+        upper(trim(segment)) as segment
 
     from source
 
 )
 
-select
-    customer_id,
-    first_name,
-    last_name,
-    date_of_birth,
-    nationality,
-    kyc_status,
-    risk_rating,
-    onboarding_date,
-    segment
-
-from deduplicated
-where row_num = 1
+select * from {{ qualify_row_number(
+    source_relation='cleaned',
+    partition_by='customer_id',
+    order_by='onboarding_date desc, customer_id',
+    column_list='customer_id,
+        first_name,
+        last_name,
+        date_of_birth,
+        nationality,
+        kyc_status,
+        risk_rating,
+        onboarding_date,
+        segment'
+) }} as latest_customer
