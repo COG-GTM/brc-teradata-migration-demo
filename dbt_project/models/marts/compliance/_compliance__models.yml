@@ -6,6 +6,12 @@ models:
       AML/sanctions screening alerts.
       Migrated from: teradata/stored_procedures/sp_aml_screening.sql
       and teradata/ddl/05_mart_tables.sql (MART_AML_ALERTS).
+      Physical design on Databricks: Delta table, liquid clustering on
+      (alert_date, customer_id), incremental merge on alert_id. Other targets
+      use a dialect-neutral delete+insert incremental.
+      alert_type / alert_severity are stored upper-cased and trimmed so
+      sanctions / PEP reporting does not depend on engine collation
+      (Databricks and Snowflake are case-sensitive; Teradata was not).
     columns:
       - name: alert_id
         tests:
@@ -33,6 +39,10 @@ models:
     description: >
       Customer KYC compliance status tracker.
       Tracks verification status and expiry for regulatory reporting.
+      Physical design on Databricks: Delta table, liquid clustering on
+      customer_id. Status, risk, segment and nationality codes are upper-cased
+      and trimmed so EDD / high-risk-jurisdiction rules evaluate identically on
+      Databricks, Snowflake and Postgres.
     columns:
       - name: customer_id
         tests:

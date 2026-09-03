@@ -1,9 +1,47 @@
 -- KYC compliance status for regulatory reporting.
 -- Tracks customer verification status, risk rating, and account activity.
+--
+-- Physical design:
+--   Databricks: Delta table, liquid clustering on (customer_id)
+--   Other targets: plain table (project default)
 
-with customers as (
+{% if target.type == 'databricks' %}
+    {{
+        config(
+            materialized='table',
+            file_format='delta',
+            liquid_clustered_by=['customer_id'],
+            tblproperties={
+                'delta.autoOptimize.optimizeWrite': 'true',
+                'delta.autoOptimize.autoCompact': 'true'
+            }
+        )
+    }}
+{% endif %}
+
+with raw_customers as (
 
     select * from {{ ref('stg_customers') }}
+
+),
+
+customers as (
+
+    -- Codes are upper-cased/trimmed here so downstream comparisons do not rely
+    -- on engine collation. Teradata compares CHAR/VARCHAR as NOT CASESPECIFIC
+    -- by default; Snowflake and Databricks (Spark SQL) are both case-sensitive,
+    -- and Databricks has no session-level collation override.
+    select
+        customer_id,
+        first_name,
+        last_name,
+        upper(trim(nationality)) as nationality,
+        upper(trim(kyc_status)) as kyc_status,
+        upper(trim(risk_rating)) as risk_rating,
+        upper(trim(segment)) as segment,
+        onboarding_date
+
+    from raw_customers
 
 ),
 
@@ -25,7 +63,7 @@ risk_factors as (
 
     select
         customer_id,
-        derived_risk_rating,
+        upper(trim(derived_risk_rating)) as derived_risk_rating,
         total_transactions,
         total_transaction_volume
 
