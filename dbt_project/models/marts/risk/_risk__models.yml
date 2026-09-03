@@ -6,7 +6,17 @@ models:
       Credit risk scores per customer with PD, LGD, EAD, and RWA.
       Migrated from: teradata/stored_procedures/sp_customer_risk_scoring.sql
       and teradata/ddl/05_mart_tables.sql (MART_CREDIT_RISK).
+      Physical design on Databricks: Delta, merge-incremental on
+      (customer_id, assessment_date), partitioned by assessment_date and
+      ZORDERed on (customer_id, risk_rating) via post-hook. On Postgres and
+      Snowflake it stays a full table rebuild.
+      Basel III measures are computed with explicit DECIMAL precision so
+      Spark's precision-38 arithmetic rules cannot truncate the result scale.
     columns:
+      - name: assessment_date
+        description: Date the score was produced; Delta partition key.
+        tests:
+          - not_null
       - name: customer_id
         tests:
           - unique
@@ -34,11 +44,13 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
       - name: risk_weighted_assets
+        description: "EAD * PD * LGD * 12.5, decimal(38,6)."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
       - name: expected_loss
+        description: "PD * LGD * EAD, decimal(38,6)."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
@@ -50,6 +62,11 @@ models:
       Migrated from: teradata/stored_procedures/sp_regulatory_capital_calc.sql
       and teradata/ddl/05_mart_tables.sql (MART_REGULATORY_CAPITAL).
       Replaces Teradata GROUP BY ROLLUP, CSUM, MAVG, MDIFF, NORMALIZE ON.
+      Physical design on Databricks: Delta table with liquid clustering on
+      (reporting_date, asset_class); no ZORDER, since liquid clustering and
+      ZORDER are mutually exclusive.
+      Ratio denominators are DECIMAL and nullif-guarded so ANSI-mode
+      Databricks cannot raise on divide-by-zero.
     columns:
       - name: capital_id
         tests:
@@ -66,10 +83,22 @@ models:
       - name: total_rwa
         tests:
           - not_null
+      - name: capital_required
+        description: "8% of total RWA per Basel III, decimal(38,6)."
+        tests:
+          - not_null
+      - name: capital_ratio
+        description: >
+          capital_required / total_exposure as decimal(18,8); null when
+          total_exposure is not positive. Bounds enforced by
+          tests/assert_capital_ratio_bounds.sql.
 
   - name: dim_risk_ratings
     description: >
       Risk rating reference dimension with PD/LGD calibration.
+      Stored as a small Delta table on Databricks (auto-optimize enabled, no
+      partitioning). PD/LGD/risk-weight columns are decimal(18,6) so they are
+      portable across Databricks, Snowflake and Postgres.
     columns:
       - name: risk_rating
         tests:
