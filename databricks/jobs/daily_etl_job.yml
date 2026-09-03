@@ -1,0 +1,204 @@
+# =============================================================================
+# daily_etl_job.yml
+#
+# Replaces:
+#   teradata/scheduled_jobs/daily_etl_sequence.txt (BRCL_DAILY_001..009)
+#   teradata/bteq/daily_batch_load.bteq            (orchestration + SP calls)
+#
+# Mapping rationale:
+#   Each BRCL_DAILY_* scheduler job becomes one Workflows task and each
+#   "Dependency" column entry becomes a depends_on edge, so the parallel
+#   fan-out in the legacy execution graph (FastLoad and TPT together, then the
+#   MultiLoad upsert, then the BTEQ batch, then export/stats in parallel) is
+#   preserved exactly. The stored-procedure calls inside daily_batch_load.bteq
+#   (sp_daily_transaction_load, sp_customer_risk_scoring, sp_aml_screening) are
+#   no longer procedural — they are dbt models, so STEP 1-3 collapse into a
+#   single dbt task whose DAG orders them.
+#
+#   BTEQ's .IF ERRORCODE <> 0 THEN .GOTO ERRORHANDLER becomes task failure plus
+#   dependency-based skipping; the NODATA branch becomes a condition task on
+#   the pre-flight task's exit value. The 06:00 GMT business-day-only schedule
+#   is a quartz cron with timezone Europe/London.
+#
+# Legacy job -> task_key:
+#   BRCL_DAILY_001_PREFLIGHT        -> preflight
+#   BRCL_DAILY_002_FASTLOAD_MKTDATA -> load_market_data
+#   BRCL_DAILY_003_TPT_TRANSACTIONS -> load_transactions
+#   BRCL_DAILY_004_MLOAD_BALANCES   -> upsert_account_balances
+#   BRCL_DAILY_005_BTEQ_MAIN        -> dbt_daily_transform
+#   BRCL_DAILY_006_EXPORT_CUSTOMERS -> export_customers
+#   BRCL_DAILY_007_STATS_COLLECTION -> (folded into post_load_validation)
+#   BRCL_DAILY_008_VALIDATION       -> post_load_validation
+#   BRCL_DAILY_009_NOTIFICATION     -> job-level email_notifications
+# =============================================================================
+
+resources:
+  jobs:
+    brcl_daily_etl:
+      name: BRCL Daily ETL (migrated from daily_etl_sequence.txt)
+      description: >-
+        Daily retail-banking warehouse load. Databricks replacement for the
+        UC4/AutoSys BRCL_DAILY_001..009 sequence.
+      tags:
+        source: teradata_migration
+        cadence: daily
+
+      # 06:00 GMT, Monday-Friday (legacy: business days only).
+      schedule:
+        quartz_cron_expression: "0 0 6 ? * MON-FRI"
+        timezone_id: Europe/London
+        pause_status: PAUSED
+
+      max_concurrent_runs: 1
+
+      email_notifications:
+        # BRCL_DAILY_009_NOTIFICATION
+        on_success:
+          - ${var.notification_email}
+        on_failure:
+          - ${var.notification_email}
+
+      parameters:
+        - name: business_date
+          default: "{{job.start_time.iso_date}}"
+
+      job_clusters:
+        - job_cluster_key: etl_cluster
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: Standard_DS3_v2
+            data_security_mode: SINGLE_USER
+            num_workers: 2
+            spark_conf:
+              spark.databricks.delta.optimizeWrite.enabled: "true"
+
+      tasks:
+        # --- BRCL_DAILY_001_PREFLIGHT ---------------------------------------
+        - task_key: preflight
+          description: File-arrival and data-availability checks (BTEQ pre-flight block)
+          job_cluster_key: etl_cluster
+          spark_python_task:
+            python_file: ../ingestion/preflight_checks.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema_raw=${var.schema_raw}
+              - --landing_path=${var.landing_path}
+              - --business_date={{job.parameters.business_date}}
+
+        # --- BRCL_DAILY_002_FASTLOAD_MKTDATA (market_data_load.fl) ----------
+        - task_key: load_market_data
+          description: Auto Loader ingest of the market data feed
+          depends_on:
+            - task_key: preflight
+          job_cluster_key: etl_cluster
+          spark_python_task:
+            python_file: ../ingestion/market_data_autoloader.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema_raw=${var.schema_raw}
+              - --landing_path=${var.landing_path}/market_data
+              - --checkpoint_path=${var.checkpoint_path}/market_data
+              - --delimiter=${var.delimiter}
+
+        # --- BRCL_DAILY_003_TPT_TRANSACTIONS (transaction_load.tpt) ---------
+        # Runs in parallel with load_market_data, as in the legacy graph.
+        - task_key: load_transactions
+          description: COPY INTO ingest of the daily transaction extract
+          depends_on:
+            - task_key: preflight
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../ingestion/transactions_copy_into.sql
+            parameters:
+              catalog: ${var.catalog}
+              schema_raw: ${var.schema_raw}
+              landing_path: ${var.landing_path}/transactions
+              delimiter: ${var.delimiter}
+
+        - task_key: load_reference_data
+          description: COPY INTO ingest of customer/account/counterparty extracts
+          depends_on:
+            - task_key: preflight
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../ingestion/reference_data_copy_into.sql
+            parameters:
+              catalog: ${var.catalog}
+              schema_raw: ${var.schema_raw}
+              landing_path: ${var.landing_path}
+              delimiter: ${var.delimiter}
+
+        # --- BRCL_DAILY_004_MLOAD_BALANCES (account_balance_upsert.ml) ------
+        - task_key: upsert_account_balances
+          description: MERGE INTO upsert of daily balance snapshots
+          depends_on:
+            - task_key: load_transactions
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../ingestion/account_balance_merge.sql
+            parameters:
+              catalog: ${var.catalog}
+              schema_dwh: ${var.schema_dwh}
+              landing_path: ${var.landing_path}/balances
+              delimiter: ${var.delimiter}
+
+        # --- BRCL_DAILY_005_BTEQ_MAIN (daily_batch_load.bteq STEP 1-3) ------
+        - task_key: dbt_daily_transform
+          description: >-
+            dbt run/test of staging -> intermediate -> marts. Replaces
+            sp_daily_transaction_load, sp_customer_risk_scoring and
+            sp_aml_screening.
+          depends_on:
+            - task_key: load_transactions
+            - task_key: load_reference_data
+            - task_key: load_market_data
+            - task_key: upsert_account_balances
+          dbt_task:
+            project_directory: ../../dbt_project
+            profiles_directory: ../../dbt_project
+            catalog: ${var.catalog}
+            schema: ${var.schema_raw}
+            warehouse_id: ${var.warehouse_id}
+            commands:
+              - dbt deps
+              - dbt seed --target databricks
+              - dbt run --target databricks
+              - dbt test --target databricks
+          libraries:
+            - pypi:
+                package: dbt-databricks>=1.8.0
+
+        # --- BRCL_DAILY_006_EXPORT_CUSTOMERS (customer_export.bteq/.tpt) ----
+        - task_key: export_customers
+          description: Pipe-delimited current-customer extract for downstream systems
+          depends_on:
+            - task_key: dbt_daily_transform
+          job_cluster_key: etl_cluster
+          spark_python_task:
+            python_file: ../export/customer_export.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema_compliance=${var.schema_compliance}
+              - --schema_staging=${var.schema_staging}
+              - --export_dir=${var.export_path}/customer
+              - --business_date={{job.parameters.business_date}}
+
+        # --- BRCL_DAILY_007 + 008 (stats collection + validation) -----------
+        - task_key: post_load_validation
+          description: Row-count / reconciliation assertions and Delta OPTIMIZE
+          depends_on:
+            - task_key: dbt_daily_transform
+            - task_key: export_customers
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../validation/post_load_validation.sql
+            parameters:
+              catalog: ${var.catalog}
+              schema_raw: ${var.schema_raw}
+              schema_finance: ${var.schema_finance}
+              schema_compliance: ${var.schema_compliance}
+              business_date: "{{job.parameters.business_date}}"

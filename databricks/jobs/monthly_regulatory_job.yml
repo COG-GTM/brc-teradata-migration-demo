@@ -1,0 +1,137 @@
+# =============================================================================
+# monthly_regulatory_job.yml
+#
+# Replaces:
+#   teradata/scheduled_jobs/monthly_regulatory_sequence.txt (BRCL_MONTH_001..010)
+#   teradata/bteq/monthly_regulatory_report.bteq            (STEP 1-3)
+#
+# Mapping rationale:
+#   Same one-scheduler-job-per-task mapping as the daily workflow. The two
+#   stored procedures the BTEQ script called (sp_regulatory_capital_calc and
+#   sp_monthly_pnl_rollup) are dbt models fct_regulatory_capital and
+#   fct_monthly_pnl, so BRCL_MONTH_002 and _003 — which ran in parallel — become
+#   a single dbt task selecting both model subtrees; dbt's own DAG restores the
+#   parallelism inside the task.
+#
+#   "1st business day of the month" cannot be expressed directly in quartz, so
+#   the job runs on the 1st weekday of each month (cron 1W) — the closest
+#   built-in equivalent; a bank-holiday-aware calendar check belongs in the
+#   preflight task if the UK holiday calendar matters.
+#
+# Legacy job -> task_key:
+#   BRCL_MONTH_001_PREFLIGHT          -> month_end_preflight
+#   BRCL_MONTH_002_REG_CAPITAL        -> dbt_monthly_transform
+#   BRCL_MONTH_003_PNL_ROLLUP         -> dbt_monthly_transform
+#   BRCL_MONTH_004_BTEQ_REGULATORY    -> dbt_monthly_transform (tests)
+#   BRCL_MONTH_005_EXPORT_REGULATORY  -> export_regulatory
+#   BRCL_MONTH_006_EXPORT_PNL         -> export_regulatory
+#   BRCL_MONTH_007_STATS_REFRESH      -> monthly_validation_and_archive
+#   BRCL_MONTH_008_VALIDATION         -> monthly_validation_and_archive
+#   BRCL_MONTH_009_ARCHIVE            -> monthly_validation_and_archive
+#   BRCL_MONTH_010_NOTIFICATION       -> job-level email_notifications
+# =============================================================================
+
+resources:
+  jobs:
+    brcl_monthly_regulatory:
+      name: BRCL Monthly Regulatory (migrated from monthly_regulatory_sequence.txt)
+      description: >-
+        Month-end Basel III capital and P&L reporting. Databricks replacement
+        for the UC4/AutoSys BRCL_MONTH_001..010 sequence.
+      tags:
+        source: teradata_migration
+        cadence: monthly
+
+      # 07:00 on the first weekday of the month (legacy: 1st business day).
+      schedule:
+        quartz_cron_expression: "0 0 7 1W * ?"
+        timezone_id: Europe/London
+        pause_status: PAUSED
+
+      max_concurrent_runs: 1
+
+      email_notifications:
+        # BRCL_MONTH_010_NOTIFICATION (regulatory ops + finance)
+        on_success:
+          - ${var.notification_email}
+        on_failure:
+          - ${var.notification_email}
+
+      parameters:
+        - name: reporting_date
+          # First day of the current month, matching the BTEQ expression
+          # CURRENT_DATE - EXTRACT(DAY FROM CURRENT_DATE) + 1.
+          default: "{{job.start_time.iso_date}}"
+
+      job_clusters:
+        - job_cluster_key: reg_cluster
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: Standard_DS3_v2
+            data_security_mode: SINGLE_USER
+            num_workers: 2
+
+      tasks:
+        # --- BRCL_MONTH_001_PREFLIGHT ---------------------------------------
+        - task_key: month_end_preflight
+          description: Verify every daily run for the prior month completed
+          job_cluster_key: reg_cluster
+          spark_python_task:
+            python_file: ../ingestion/preflight_checks.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema_raw=${var.schema_raw}
+              - --landing_path=${var.landing_path}
+              - --business_date={{job.parameters.reporting_date}}
+
+        # --- BRCL_MONTH_002/003/004 -----------------------------------------
+        - task_key: dbt_monthly_transform
+          description: >-
+            dbt build of the risk and finance marts. Replaces
+            sp_regulatory_capital_calc, sp_monthly_pnl_rollup and the
+            monthly_regulatory_report.bteq orchestration.
+          depends_on:
+            - task_key: month_end_preflight
+          dbt_task:
+            project_directory: ../../dbt_project
+            profiles_directory: ../../dbt_project
+            catalog: ${var.catalog}
+            schema: ${var.schema_raw}
+            warehouse_id: ${var.warehouse_id}
+            commands:
+              - dbt deps
+              - dbt build --target databricks --select tag:risk tag:finance
+          libraries:
+            - pypi:
+                package: dbt-databricks>=1.8.0
+
+        # --- BRCL_MONTH_005 + 006 -------------------------------------------
+        - task_key: export_regulatory
+          description: PRA/FCA capital submission files and finance P&L extracts
+          depends_on:
+            - task_key: dbt_monthly_transform
+          job_cluster_key: reg_cluster
+          spark_python_task:
+            python_file: ../export/regulatory_export.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema_risk=${var.schema_risk}
+              - --schema_finance=${var.schema_finance}
+              - --export_dir=${var.export_path}/regulatory
+              - --reporting_date={{job.parameters.reporting_date}}
+
+        # --- BRCL_MONTH_007 + 008 + 009 -------------------------------------
+        - task_key: monthly_validation_and_archive
+          description: GL cross-check, statistics refresh and history retention
+          depends_on:
+            - task_key: export_regulatory
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../validation/monthly_validation_and_archive.sql
+            parameters:
+              catalog: ${var.catalog}
+              schema_raw: ${var.schema_raw}
+              schema_risk: ${var.schema_risk}
+              schema_finance: ${var.schema_finance}
+              reporting_date: "{{job.parameters.reporting_date}}"
