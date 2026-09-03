@@ -1,0 +1,197 @@
+name: dbt Databricks CI
+
+on:
+  pull_request:
+    paths:
+      - 'dbt_project/**'
+      - '.github/workflows/dbt_databricks_ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'dbt_project/**'
+      - '.github/workflows/dbt_databricks_ci.yml'
+
+jobs:
+  databricks-validate:
+    name: dbt parse & compile (Databricks adapter)
+    runs-on: ubuntu-latest
+
+    env:
+      # Populated from repository secrets when available; placeholders keep
+      # `dbt deps` / `dbt parse` working without a live Databricks workspace.
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_HTTP_PATH: ${{ secrets.DATABRICKS_HTTP_PATH }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      DATABRICKS_CATALOG: ${{ secrets.DATABRICKS_CATALOG }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: |
+          pip install --upgrade pip
+          pip install dbt-core dbt-databricks
+
+      - name: Resolve Databricks connection settings
+        id: creds
+        run: |
+          if [ -n "${DATABRICKS_HOST}" ] && [ -n "${DATABRICKS_HTTP_PATH}" ] && [ -n "${DATABRICKS_TOKEN}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DATABRICKS_HOST/HTTP_PATH/TOKEN secrets are not set - using placeholders and skipping dbt compile."
+          fi
+          # env_var() defaults do not apply to secrets that resolve to an empty
+          # string, so fill the placeholders here instead.
+          {
+            echo "DATABRICKS_HOST=${DATABRICKS_HOST:-placeholder.cloud.databricks.com}"
+            echo "DATABRICKS_HTTP_PATH=${DATABRICKS_HTTP_PATH:-/sql/1.0/warehouses/placeholder}"
+            echo "DATABRICKS_TOKEN=${DATABRICKS_TOKEN:-dapi-placeholder-token}"
+            echo "DATABRICKS_CATALOG=${DATABRICKS_CATALOG:-barclays_migration}"
+          } >> "$GITHUB_ENV"
+
+      - name: Create profiles.yml for Databricks CI
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<'PROFILES_EOF'
+          barclays_migration:
+            target: databricks
+            outputs:
+              databricks:
+                type: databricks
+                host: "{{ env_var('DATABRICKS_HOST', 'placeholder.cloud.databricks.com') }}"
+                http_path: "{{ env_var('DATABRICKS_HTTP_PATH', '/sql/1.0/warehouses/placeholder') }}"
+                token: "{{ env_var('DATABRICKS_TOKEN', 'dapi-placeholder-token') }}"
+                catalog: "{{ env_var('DATABRICKS_CATALOG', 'barclays_migration') }}"
+                schema: public
+                threads: 4
+          PROFILES_EOF
+
+      - name: Install dbt packages
+        working-directory: ./dbt_project
+        run: dbt deps
+
+      - name: Parse project with the Databricks adapter
+        working-directory: ./dbt_project
+        run: dbt parse --target databricks
+
+      - name: Compile project against Databricks
+        if: steps.creds.outputs.available == 'true'
+        working-directory: ./dbt_project
+        run: dbt compile --target databricks
+
+  databricks-sql-lint:
+    name: Databricks SQL dialect lint
+    runs-on: ubuntu-latest
+
+    env:
+      # Flip to 'true' to report findings without failing the job.
+      LINT_SOFT_FAIL: 'false'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Lint dbt project for Snowflake-only constructs
+        run: |
+          cat > /tmp/databricks_sql_lint.py <<'LINT_EOF'
+          #!/usr/bin/env python3
+          """Fail the build on Snowflake-only SQL constructs that break on Databricks."""
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          PROJECT_DIR = Path("dbt_project")
+          SCAN_DIRS = ["models", "macros", "snapshots", "tests", "analyses"]
+
+          # Files allowed to contain a construct, keyed by rule name.
+          ALLOW_LIST = {
+              # Emits native QUALIFY only inside an `if target.type == 'snowflake'`
+              # branch and a sub-query wrapper for every other adapter.
+              "QUALIFY": {"macros/teradata_compat/qualify_row_number.sql"},
+          }
+
+          RULES = [
+              ("QUALIFY", re.compile(r"^\s*qualify\s", re.IGNORECASE),
+               "inline QUALIFY clause; Databricks SQL has no QUALIFY - use the qualify_row_number() macro"),
+              ("VARIANT", re.compile(r"\bvariant\b", re.IGNORECASE),
+               "Snowflake VARIANT type; use STRING/STRUCT/MAP or from_json() on Databricks"),
+              ("FLATTEN", re.compile(r"\bflatten\s*\(", re.IGNORECASE),
+               "Snowflake FLATTEN; use explode()/LATERAL VIEW on Databricks"),
+              ("IFF", re.compile(r"\biff\s*\(", re.IGNORECASE),
+               "Snowflake IFF(); use CASE WHEN or if() on Databricks"),
+              ("NVL2", re.compile(r"\bnvl2\s*\(", re.IGNORECASE),
+               "Snowflake NVL2(); use CASE WHEN on Databricks"),
+              ("TO_VARCHAR", re.compile(r"\bto_varchar\s*\(", re.IGNORECASE),
+               "Snowflake TO_VARCHAR(); use cast(... as string) on Databricks"),
+              ("DATEADD", re.compile(r"\bdateadd\s*\(", re.IGNORECASE),
+               "raw DATEADD() has dialect-specific argument order; use the dateadd() dbt macro"),
+              ("DATEDIFF", re.compile(r"\bdatediff\s*\(", re.IGNORECASE),
+               "raw DATEDIFF() has dialect-specific argument order; use the datediff() dbt macro"),
+          ]
+
+          # Jinja macro calls such as {{ datediff(...) }} are dialect-aware and therefore
+          # fine; only raw SQL occurrences outside Jinja and comments are flagged.
+          JINJA_BLOCK = re.compile(r"\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}", re.DOTALL)
+          LINE_COMMENT = re.compile(r"--.*$", re.MULTILINE)
+          BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+          def strip_noise(text: str) -> str:
+              """Blank out comments and Jinja expressions, preserving line numbers."""
+              def blank(match: re.Match) -> str:
+                  return re.sub(r"[^\n]", " ", match.group(0))
+
+              for pattern in (BLOCK_COMMENT, JINJA_BLOCK, LINE_COMMENT):
+                  text = pattern.sub(blank, text)
+              return text
+
+
+          def main() -> int:
+              findings = []
+              for scan_dir in SCAN_DIRS:
+                  root = PROJECT_DIR / scan_dir
+                  if not root.is_dir():
+                      continue
+                  for path in sorted(root.rglob("*.sql")):
+                      rel = path.relative_to(PROJECT_DIR).as_posix()
+                      lines = strip_noise(path.read_text()).splitlines()
+                      for name, pattern, message in RULES:
+                          if rel in ALLOW_LIST.get(name, set()):
+                              continue
+                          for lineno, line in enumerate(lines, start=1):
+                              if pattern.search(line):
+                                  findings.append((rel, lineno, name, message))
+
+              if not findings:
+                  print("Databricks SQL lint: no Snowflake-only constructs found.")
+                  return 0
+
+              print("Databricks SQL lint: found Snowflake-only constructs:\n")
+              for rel, lineno, name, message in findings:
+                  print(f"  dbt_project/{rel}:{lineno}: {name} -> {message}")
+              print(f"\n{len(findings)} finding(s).")
+
+              if os.environ.get("LINT_SOFT_FAIL") == "true":
+                  print("LINT_SOFT_FAIL=true - reporting findings without failing the job.")
+                  return 0
+              return 1
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+          LINT_EOF
+          python3 /tmp/databricks_sql_lint.py
