@@ -1,8 +1,8 @@
 # Barclays Teradata Migration Demo
 
-> **Demo:** Migrating a Barclays-style Teradata on-premises retail banking data warehouse to dbt Core targeting Snowflake and Databricks.
+> **Demo:** Migrating a Barclays-style Teradata on-premises retail banking data warehouse to dbt Core targeting **Databricks** (primary) and Snowflake (secondary).
 
-This repository demonstrates a realistic migration from a monolithic **Teradata** data warehouse -- typical of large UK retail banks -- to a modern, modular **dbt Core** analytics engineering stack running on **Snowflake** or **Databricks**.
+This repository demonstrates a realistic migration from a monolithic **Teradata** data warehouse -- typical of large UK retail banks -- to a modern, modular **dbt Core** analytics engineering stack running on **Databricks** (Unity Catalog + Delta Lake). Snowflake is kept as a supported secondary target, and a local **Postgres** target is used for development and CI.
 
 ---
 
@@ -39,7 +39,7 @@ The demo covers five core banking domains that are representative of a Tier-1 UK
                               ▼  Migration  ▼
 
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    AFTER  (dbt + Snowflake / Databricks)            │
+│                    AFTER  (dbt + Databricks / Snowflake)            │
 │                                                                     │
 │  ┌──────────┐   ┌──────────────┐   ┌────────────┐   ┌───────────┐ │
 │  │  Fivetran│   │  dbt Core    │   │  dbt Core  │   │  dbt Core │ │
@@ -47,7 +47,7 @@ The demo covers five core banking domains that are representative of a Tier-1 UK
 │  │  / Custom│   │  models      │   │  models    │   │  models   │ │
 │  └──────────┘   └──────────────┘   └────────────┘   └───────────┘ │
 │                                                                     │
-│  Snowflake / Databricks  ·  Version-controlled SQL  ·  CI/CD       │
+│  Databricks / Snowflake  ·  Version-controlled SQL  ·  CI/CD       │
 │  Modular  ·  Testable  ·  Self-documenting  ·  Multi-target        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -59,19 +59,20 @@ The demo covers five core banking domains that are representative of a Tier-1 UK
 | Teradata Construct | dbt / Modern Equivalent |
 |---|---|
 | `SET` / `MULTISET` tables | Standard tables (dedup handled in SQL) |
-| `PRIMARY INDEX` | Snowflake clustering keys / Databricks Z-ORDER |
-| `PARTITION BY RANGE_N` (PPI) | Snowflake automatic micro-partitioning / Delta partitioning |
-| `QUALIFY ROW_NUMBER()` | Supported natively in Snowflake; subquery wrapper in Databricks |
+| `PRIMARY INDEX` | Delta liquid clustering / `ZORDER BY` (Snowflake: clustering keys) |
+| `PARTITION BY RANGE_N` (PPI) | Delta `PARTITIONED BY` / liquid clustering (Snowflake: micro-partitioning) |
+| `QUALIFY ROW_NUMBER()` | Supported natively in Databricks SQL and Snowflake |
 | `ZEROIFNULL` / `NULLIFZERO` | `COALESCE(col, 0)` / `NULLIF(col, 0)` |
-| `COLLECT STATISTICS` | Snowflake automatic stats / `ANALYZE TABLE` in Databricks |
+| `COLLECT STATISTICS` | `ANALYZE TABLE ... COMPUTE STATISTICS` on Databricks (Snowflake: automatic) |
 | `LOCK ROW FOR ACCESS` | Read-committed isolation (default) |
 | `CSUM` / `MAVG` / `MDIFF` | `SUM() OVER (ORDER BY ...)` / `AVG() OVER (ROWS ...)` |
 | `NORMALIZE ON` (period) | Custom SQL with gap-and-island detection |
-| `HASHROW` / `HASHBUCKET` | `MD5()` / `HASH()` |
+| `HASHROW` / `HASHBUCKET` | `md5()` / `hash()` / `xxhash64()` on Databricks |
 | Stored Procedures (BTEQ calls) | dbt models + macros + orchestration (Airflow / dbt Cloud) |
 | `MERGE INTO` (SCD2) | dbt snapshots (`strategy='check'`) |
 | `VOLATILE TABLE` | CTEs or ephemeral models |
-| FastLoad / MultiLoad / TPT | Snowpipe / COPY INTO / Databricks Auto Loader |
+| `MERGE INTO` (batch upsert) | Delta `MERGE` via dbt `incremental_strategy: merge` |
+| FastLoad / MultiLoad / TPT | Databricks Auto Loader / `COPY INTO` (Snowflake: Snowpipe) |
 | BTEQ scripts (.bteq) | dbt run / dbt build with selectors |
 | Scheduled jobs (cron / UC4) | dbt Cloud schedules / Airflow DAGs / GitHub Actions |
 
@@ -107,27 +108,62 @@ barclays-teradata-migration-demo/
 
 ---
 
-## Quick Start
+## Quick Start (Databricks -- primary target)
 
 ```bash
 # 1. Clone
-git clone https://github.com/COG-GTM/barclays-teradata-migration-demo.git
-cd barclays-teradata-migration-demo
+git clone https://github.com/COG-GTM/brc-teradata-migration-demo.git
+cd brc-teradata-migration-demo
 
-# 2. Start local Postgres (for dbt development / testing)
-docker-compose up -d
+# 2. Install dbt with the Databricks adapter
+pip install dbt-core dbt-databricks
 
-# 3. Install dbt
-pip install dbt-postgres  # or dbt-snowflake / dbt-databricks
+# 3. Configure the profile (default target is `databricks`)
+cp dbt_project/profiles.yml.example ~/.dbt/profiles.yml
 
-# 4. Run the dbt project
+# 4. Export Databricks connection settings
+export DATABRICKS_HOST='adb-1234567890123456.7.azuredatabricks.net'  # no scheme
+export DATABRICKS_HTTP_PATH='/sql/1.0/warehouses/abc123def456'
+export DATABRICKS_TOKEN='dapi...'            # or use the OAuth block in the profile
+export DATABRICKS_CATALOG='barclays_migration'  # Unity Catalog catalog (optional)
+export DATABRICKS_SCHEMA='public'               # optional
+export DATABRICKS_THREADS='8'                   # optional
+
+# 5. Build
 cd dbt_project
-cp profiles.yml.example ~/.dbt/profiles.yml   # edit connection details
 dbt deps
-dbt seed
-dbt run
-dbt test
+dbt build --target databricks    # seeds + models + snapshots + tests
 ```
+
+The Unity Catalog `catalog` must already exist and the principal behind
+`DATABRICKS_TOKEN` (or the OAuth service principal) needs `USE CATALOG`,
+`CREATE SCHEMA`, and `CREATE TABLE` on it.
+
+### Snowflake (secondary target)
+
+```bash
+pip install dbt-core dbt-snowflake
+export SNOWFLAKE_ACCOUNT=... SNOWFLAKE_USER=... SNOWFLAKE_PASSWORD=...
+export SNOWFLAKE_ROLE=TRANSFORMER SNOWFLAKE_DATABASE=BARCLAYS_MIGRATION SNOWFLAKE_WAREHOUSE=TRANSFORMING
+cd dbt_project && dbt deps && dbt build --target snowflake
+```
+
+### Local Postgres (development & CI)
+
+Used by `.github/workflows/dbt_ci.yml` so every PR gets a functional
+`dbt build` without a warehouse account.
+
+```bash
+docker-compose up -d                 # Postgres on :5432, Adminer on :8080
+pip install dbt-core dbt-postgres
+cd dbt_project && dbt deps && dbt build --target postgres_local
+```
+
+`dbt_project.yml` sets `vars.target_platform: "databricks"`; set it to
+`"snowflake"` (or override with `--vars 'target_platform: snowflake'`) to emit
+Snowflake-flavoured SQL from the `teradata_compat` macros. Databricks-specific
+model configs (`file_format: delta`, `incremental_strategy: merge`) are applied
+via target-conditional jinja, so the Postgres and Snowflake paths are unchanged.
 
 ---
 
@@ -137,7 +173,7 @@ dbt test
 
 | Migration Phase | How Devin Automates It |
 |---|---|
-| **SQL Syntax Translation** | Devin reads Teradata DDL and stored procedures, then rewrites them as dbt-compatible SQL targeting Snowflake or Databricks -- handling `QUALIFY`, `ZEROIFNULL`, `CSUM`, date arithmetic, and other Teradata-specific constructs automatically. |
+| **SQL Syntax Translation** | Devin reads Teradata DDL and stored procedures, then rewrites them as dbt-compatible SQL targeting Databricks or Snowflake -- handling `QUALIFY`, `ZEROIFNULL`, `CSUM`, date arithmetic, and other Teradata-specific constructs automatically. |
 | **Stored Procedure Decomposition** | Devin analyses monolithic stored procedures, identifies discrete transformation steps, and decomposes them into modular dbt models with proper `{{ ref() }}` lineage. |
 | **Test Generation** | Devin inspects column semantics and business rules to generate `schema.yml` tests (unique, not_null, accepted_values, relationships) plus custom data tests. |
 | **CI/CD Setup** | Devin creates GitHub Actions workflows, docker-compose files, and profile templates so every PR runs `dbt build` automatically. |
@@ -149,8 +185,9 @@ dbt test
 
 - [COG-GTM/Teradata-Utilities-Script](https://github.com/COG-GTM/Teradata-Utilities-Script) -- Additional Teradata utility examples (BTEQ, FastLoad, MultiLoad, TPT)
 - [dbt Documentation](https://docs.getdbt.com/)
-- [Snowflake Migration Guide](https://docs.snowflake.com/en/user-guide/migration-teradata.html)
 - [Databricks Migration Guide](https://docs.databricks.com/en/migration/teradata.html)
+- [dbt-databricks adapter setup](https://docs.getdbt.com/docs/core/connect-data-platform/databricks-setup)
+- [Snowflake Migration Guide](https://docs.snowflake.com/en/user-guide/migration-teradata.html)
 
 ---
 
