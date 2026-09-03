@@ -16,6 +16,10 @@ clean-targets:
 
 models:
   barclays_migration:
+    # Databricks-first defaults. Every value is target-conditional so the
+    # Postgres CI path and the Snowflake target are unaffected.
+    +file_format: "{{ 'delta' if target.type == 'databricks' else none }}"
+    +incremental_strategy: "{{ 'merge' if target.type == 'databricks' else 'delete+insert' }}"
     staging:
       +materialized: view
       +schema: staging
@@ -79,5 +83,6 @@ snapshots:
 vars:
   # Default business date for development/testing
   business_date: "current_date"
-  # Toggle between Snowflake and Databricks syntax where needed
-  target_platform: "snowflake"  # or "databricks"
+  # Toggle SQL dialect helpers. Databricks is the primary target;
+  # "snowflake" remains supported as the secondary target.
+  target_platform: "databricks"  # or "snowflake"
